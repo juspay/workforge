@@ -1,0 +1,210 @@
+import chalk from 'chalk';
+import { Logger } from './Logger.js';
+/**
+ * List Display
+ *
+ * Displays worktree information in various formats:
+ * - Table format (default)
+ * - JSON format (for scripting)
+ * - Simple format (compact)
+ */
+export class ListDisplay {
+    logger;
+    constructor(logger) {
+        this.logger = logger || new Logger();
+    }
+    /**
+     * Display worktrees in specified format
+     *
+     * @param worktrees - Array of worktree information
+     * @param format - Display format
+     * @param sortBy - Sort field
+     */
+    show(worktrees, format = 'table', sortBy) {
+        // Sort if requested
+        const sorted = sortBy ? this.sortWorktrees(worktrees, sortBy) : worktrees;
+        switch (format) {
+            case 'json':
+                this.showJSON(sorted);
+                break;
+            case 'simple':
+                this.showSimple(sorted);
+                break;
+            default:
+                this.showTable(sorted);
+        }
+    }
+    /**
+     * Display worktrees in table format
+     */
+    showTable(worktrees) {
+        if (worktrees.length === 0) {
+            this.logger.warning('No worktrees found');
+            return;
+        }
+        this.logger.newline();
+        this.logger.header('📋 Worktrees');
+        this.logger.newline();
+        // Define column headers and widths
+        const headers = ['Branch', 'Path', 'Commit', 'Status'];
+        const widths = [25, 45, 12, 15];
+        // Print headers
+        this.logger.tableRow(headers.map(h => chalk.bold(h)), widths);
+        this.logger.separator();
+        // Print rows
+        for (const worktree of worktrees) {
+            const branch = worktree.isMainRepo
+                ? chalk.cyan('(main)')
+                : chalk.cyan(worktree.branchName);
+            const pathDisplay = this.truncatePath(worktree.path, 40);
+            const commit = chalk.gray(this.truncate(worktree.commitHash || '', 10));
+            const status = this.getStatusBadge(worktree);
+            this.logger.tableRow([branch, pathDisplay, commit, status], widths);
+        }
+        this.logger.separator();
+        this.logger.newline();
+        this.logger.dim(`Total: ${worktrees.length} worktree${worktrees.length === 1 ? '' : 's'}`);
+        this.logger.newline();
+    }
+    /**
+     * Display worktrees in JSON format
+     */
+    showJSON(worktrees) {
+        const output = worktrees.map(w => ({
+            branchName: w.branchName,
+            path: w.path,
+            commitHash: w.commitHash,
+            isMainRepo: w.isMainRepo,
+            isLocked: w.isLocked,
+            isPrunable: w.isPrunable,
+            remoteUrl: w.remoteUrl
+        }));
+        console.log(JSON.stringify(output, null, 2));
+    }
+    /**
+     * Display worktrees in simple format
+     */
+    showSimple(worktrees) {
+        if (worktrees.length === 0) {
+            this.logger.warning('No worktrees found');
+            return;
+        }
+        for (const worktree of worktrees) {
+            if (worktree.isMainRepo) {
+                this.logger.info(chalk.cyan('(main)') + ` - ${worktree.path}`);
+            }
+            else {
+                this.logger.info(chalk.cyan(worktree.branchName) + ` - ${worktree.path}`);
+            }
+        }
+    }
+    /**
+     * Display detailed worktree information
+     */
+    showDetailed(worktree) {
+        this.logger.newline();
+        this.logger.header('Worktree Details');
+        this.logger.newline();
+        this.logger.keyValue('Branch', worktree.branchName);
+        this.logger.keyValue('Path', worktree.path);
+        if (worktree.commitHash) {
+            this.logger.keyValue('Commit', worktree.commitHash);
+        }
+        if (worktree.remoteUrl) {
+            this.logger.keyValue('Remote', worktree.remoteUrl);
+        }
+        this.logger.newline();
+        this.logger.subheader('Status:');
+        if (worktree.isMainRepo) {
+            this.logger.listItem(chalk.cyan('Main repository'));
+        }
+        if (worktree.isLocked) {
+            this.logger.listItem(chalk.yellow('Locked'));
+        }
+        if (worktree.isPrunable) {
+            this.logger.listItem(chalk.red('Prunable (directory missing)'));
+        }
+        if (!worktree.isMainRepo && !worktree.isLocked && !worktree.isPrunable) {
+            this.logger.listItem(chalk.green('Active'));
+        }
+        this.logger.newline();
+    }
+    /**
+     * Display worktree count summary
+     */
+    showSummary(totalCount, mainRepoCount, worktreeCount) {
+        this.logger.newline();
+        this.logger.subheader('Summary:');
+        this.logger.listItem(`Total: ${totalCount}`);
+        this.logger.listItem(`Main repositories: ${mainRepoCount}`);
+        this.logger.listItem(`Worktrees: ${worktreeCount}`);
+        this.logger.newline();
+    }
+    /**
+     * Get status badge for worktree
+     */
+    getStatusBadge(worktree) {
+        if (worktree.isMainRepo) {
+            return chalk.cyan('MAIN');
+        }
+        if (worktree.isPrunable) {
+            return chalk.red('PRUNABLE');
+        }
+        if (worktree.isLocked) {
+            return chalk.yellow('LOCKED');
+        }
+        return chalk.green('ACTIVE');
+    }
+    /**
+     * Sort worktrees
+     */
+    sortWorktrees(worktrees, sortBy) {
+        const sorted = [...worktrees];
+        switch (sortBy) {
+            case 'name':
+                sorted.sort((a, b) => a.branchName.localeCompare(b.branchName));
+                break;
+            case 'path':
+                sorted.sort((a, b) => a.path.localeCompare(b.path));
+                break;
+            case 'age':
+                // Sort by commit hash (not perfect, but reasonable approximation)
+                sorted.sort((a, b) => {
+                    if (!a.commitHash)
+                        return 1;
+                    if (!b.commitHash)
+                        return -1;
+                    return b.commitHash.localeCompare(a.commitHash);
+                });
+                break;
+        }
+        return sorted;
+    }
+    /**
+     * Truncate path for display
+     */
+    truncatePath(path, maxLength) {
+        if (path.length <= maxLength) {
+            return path;
+        }
+        // Try to keep the most relevant parts
+        const parts = path.split('/');
+        if (parts.length > 3) {
+            const first = parts[0];
+            const last = parts[parts.length - 1];
+            const secondLast = parts[parts.length - 2];
+            return `${first}/.../${secondLast}/${last}`;
+        }
+        return this.truncate(path, maxLength);
+    }
+    /**
+     * Truncate string for display
+     */
+    truncate(str, maxLength) {
+        if (str.length <= maxLength) {
+            return str;
+        }
+        return str.substring(0, maxLength - 3) + '...';
+    }
+}
+//# sourceMappingURL=ListDisplay.js.map
