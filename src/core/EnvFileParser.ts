@@ -279,7 +279,15 @@ export class EnvFileParser {
   private findInlineComment(line: string): number {
     // Look for # or //
     const hashIndex = line.indexOf('#');
-    const slashIndex = line.indexOf('//');
+
+    // For //, require whitespace before it to avoid matching URLs (http://, https://)
+    // This prevents treating http://example.com as a comment
+    let slashIndex = -1;
+    const slashPattern = / \/\//; // Space followed by //
+    const match = line.match(slashPattern);
+    if (match && match.index !== undefined) {
+      slashIndex = match.index + 1; // +1 to skip the space and point to //
+    }
 
     if (hashIndex === -1 && slashIndex === -1) {
       return -1;

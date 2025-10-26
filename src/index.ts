@@ -3,6 +3,9 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import chalk from 'chalk';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { CreateCommand } from './commands/create.js';
 import { CloseCommand } from './commands/close.js';
 import { SyncEnvCommand } from './commands/sync-env.js';
@@ -15,6 +18,12 @@ import {
   ListOptions,
   CleanupOptions
 } from './types/index.js';
+
+// Read version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
+const VERSION = packageJson.version;
 
 /**
  * WorkForge v3.0 - Advanced Git Worktree Manager
@@ -31,7 +40,7 @@ async function main(): Promise<void> {
   await yargs(hideBin(process.argv))
     .scriptName('workforge')
     .usage('Usage: $0 <command> [options]')
-    .version('3.0.0')
+    .version(VERSION)
 
     // ===== CREATE COMMAND =====
     .command(

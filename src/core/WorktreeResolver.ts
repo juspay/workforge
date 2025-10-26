@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import * as path from 'path';
 import { WorktreeInfo } from '../types/index.js';
 
@@ -118,7 +118,15 @@ export class WorktreeResolver {
       throw new Error('Not a Git repository or worktree');
     }
 
-    // Read .git file
+    // Check if .git is a file (worktree) or directory (main repo)
+    const stats = statSync(gitPath);
+
+    if (stats.isDirectory()) {
+      // This is the main repository (.git is a directory)
+      return worktreePath;
+    }
+
+    // .git is a file - read it to find main repo
     const gitFile = readFileSync(gitPath, 'utf8').trim();
 
     if (gitFile.startsWith('gitdir:')) {
@@ -137,7 +145,7 @@ export class WorktreeResolver {
       }
     }
 
-    // This is the main repository
+    // Fallback: assume current path is main repo
     return worktreePath;
   }
 

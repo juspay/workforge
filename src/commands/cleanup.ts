@@ -40,8 +40,18 @@ export class CleanupCommand {
       this.logger.newline();
 
       // Get current repository
-      const currentWorktree = await this.worktreeResolver.resolve(undefined, undefined);
-      const repoRoot = await this.worktreeResolver.getMainRepo(currentWorktree.path);
+      let repoRoot: string;
+      try {
+        const currentWorktree = await this.worktreeResolver.resolve(undefined, undefined);
+        repoRoot = await this.worktreeResolver.getMainRepo(currentWorktree.path);
+      } catch (error) {
+        // If we're in the main repo, use current directory
+        if (error instanceof Error && error.message.includes('main repository')) {
+          repoRoot = process.cwd();
+        } else {
+          throw error;
+        }
+      }
 
       // Get project info
       const projectId = ProjectIdentifier.generateId(repoRoot);

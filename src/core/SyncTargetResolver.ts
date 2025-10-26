@@ -95,94 +95,126 @@ export class SyncTargetResolver {
    * @returns SyncTargets
    */
   private async resolveBoth(from: string, to: string): Promise<SyncTargets> {
-    // Resolve source
-    const sourceWorktree = await this.worktreeResolver.resolve(from);
-    const sourceEnvPath = path.join(sourceWorktree.path, '.env');
+    // Resolve source (try worktree first, fall back to direct path)
+    const source = await this.resolvePathFlexibly(from);
 
-    if (!existsSync(sourceEnvPath)) {
-      throw new Error(`Source environment file not found: ${sourceEnvPath}`);
+    if (!existsSync(source.envPath)) {
+      throw new Error(`Source environment file not found: ${source.envPath}`);
     }
 
-    // Resolve target
-    const targetWorktree = await this.worktreeResolver.resolve(to);
-    const targetEnvPath = path.join(targetWorktree.path, '.env');
+    // Resolve target (try worktree first, fall back to direct path)
+    const target = await this.resolvePathFlexibly(to);
 
-    if (!existsSync(targetEnvPath)) {
-      throw new Error(`Target environment file not found: ${targetEnvPath}`);
+    if (!existsSync(target.envPath)) {
+      throw new Error(`Target environment file not found: ${target.envPath}`);
     }
 
     return {
-      sourceLabel: sourceWorktree.isMainRepo
-        ? `Main (${path.basename(sourceWorktree.path)})`
-        : `Worktree (${sourceWorktree.branchName})`,
-      targetLabel: targetWorktree.isMainRepo
-        ? `Main (${path.basename(targetWorktree.path)})`
-        : `Worktree (${targetWorktree.branchName})`,
-      sourcePath: sourceEnvPath,
-      targetPath: targetEnvPath
+      sourceLabel: source.label,
+      targetLabel: target.label,
+      sourcePath: source.envPath,
+      targetPath: target.envPath
     };
   }
 
   /**
-   * Resolve --from only (target is main repo)
+   * Resolve --from only (target is current location)
    *
    * @param from - Source worktree name/path
    * @returns SyncTargets
    */
   private async resolveFromOnly(from: string): Promise<SyncTargets> {
-    // Resolve source worktree
-    const sourceWorktree = await this.worktreeResolver.resolve(from);
-    const sourceEnvPath = path.join(sourceWorktree.path, '.env');
+    // Resolve source (try worktree first, fall back to direct path)
+    const source = await this.resolvePathFlexibly(from);
 
-    if (!existsSync(sourceEnvPath)) {
-      throw new Error(`Source environment file not found: ${sourceEnvPath}`);
+    if (!existsSync(source.envPath)) {
+      throw new Error(`Source environment file not found: ${source.envPath}`);
     }
 
-    // Get main repository as target
-    const mainRepo = await this.worktreeResolver.getMainRepo(sourceWorktree.path);
-    const targetEnvPath = path.join(mainRepo, '.env');
+    // Get current location as target
+    try {
+      const currentWorktree = await this.worktreeResolver.resolve();
+      // Use the current worktree path directly, not the main repo
+      const targetEnvPath = path.join(currentWorktree.path, '.env');
 
-    if (!existsSync(targetEnvPath)) {
-      throw new Error(`Target environment file not found: ${targetEnvPath}`);
+      if (!existsSync(targetEnvPath)) {
+        throw new Error(`Target environment file not found: ${targetEnvPath}`);
+      }
+
+      return {
+        sourceLabel: source.label,
+        targetLabel: currentWorktree.isMainRepo
+          ? `Main (${path.basename(currentWorktree.path)})`
+          : `Worktree (${currentWorktree.branchName})`,
+        sourcePath: source.envPath,
+        targetPath: targetEnvPath
+      };
+    } catch (error) {
+      // If we can't detect current location, use current directory
+      const cwd = process.cwd();
+      const targetEnvPath = path.join(cwd, '.env');
+
+      if (!existsSync(targetEnvPath)) {
+        throw new Error(`Target environment file not found: ${targetEnvPath}`);
+      }
+
+      return {
+        sourceLabel: source.label,
+        targetLabel: `Current (${path.basename(cwd)})`,
+        sourcePath: source.envPath,
+        targetPath: targetEnvPath
+      };
     }
-
-    return {
-      sourceLabel: `Worktree (${sourceWorktree.branchName})`,
-      targetLabel: `Main (${path.basename(mainRepo)})`,
-      sourcePath: sourceEnvPath,
-      targetPath: targetEnvPath
-    };
   }
 
   /**
-   * Resolve --to only (source is main repo)
+   * Resolve --to only (source is current location)
    *
    * @param to - Target worktree name/path
    * @returns SyncTargets
    */
   private async resolveToOnly(to: string): Promise<SyncTargets> {
-    // Resolve target worktree
-    const targetWorktree = await this.worktreeResolver.resolve(to);
-    const targetEnvPath = path.join(targetWorktree.path, '.env');
+    // Resolve target (try worktree first, fall back to direct path)
+    const target = await this.resolvePathFlexibly(to);
 
-    if (!existsSync(targetEnvPath)) {
-      throw new Error(`Target environment file not found: ${targetEnvPath}`);
+    if (!existsSync(target.envPath)) {
+      throw new Error(`Target environment file not found: ${target.envPath}`);
     }
 
-    // Get main repository as source
-    const mainRepo = await this.worktreeResolver.getMainRepo(targetWorktree.path);
-    const sourceEnvPath = path.join(mainRepo, '.env');
+    // Get current location as source (use current worktree/repo, not main repo)
+    try {
+      const currentWorktree = await this.worktreeResolver.resolve();
+      // Use the current worktree path directly, not the main repo
+      const sourceEnvPath = path.join(currentWorktree.path, '.env');
 
-    if (!existsSync(sourceEnvPath)) {
-      throw new Error(`Source environment file not found: ${sourceEnvPath}`);
+      if (!existsSync(sourceEnvPath)) {
+        throw new Error(`Source environment file not found: ${sourceEnvPath}`);
+      }
+
+      return {
+        sourceLabel: currentWorktree.isMainRepo
+          ? `Main (${path.basename(currentWorktree.path)})`
+          : `Worktree (${currentWorktree.branchName})`,
+        targetLabel: target.label,
+        sourcePath: sourceEnvPath,
+        targetPath: target.envPath
+      };
+    } catch (error) {
+      // If we can't detect current location, use current directory
+      const cwd = process.cwd();
+      const sourceEnvPath = path.join(cwd, '.env');
+
+      if (!existsSync(sourceEnvPath)) {
+        throw new Error(`Source environment file not found: ${sourceEnvPath}`);
+      }
+
+      return {
+        sourceLabel: `Current (${path.basename(cwd)})`,
+        targetLabel: target.label,
+        sourcePath: sourceEnvPath,
+        targetPath: target.envPath
+      };
     }
-
-    return {
-      sourceLabel: `Main (${path.basename(mainRepo)})`,
-      targetLabel: `Worktree (${targetWorktree.branchName})`,
-      sourcePath: sourceEnvPath,
-      targetPath: targetEnvPath
-    };
   }
 
   /**
@@ -228,6 +260,43 @@ export class SyncTargetResolver {
   }
 
   /**
+   * Flexibly resolve a path - try as worktree first, then as direct path
+   *
+   * @param input - Path or worktree name
+   * @returns Object with label and envPath
+   */
+  private async resolvePathFlexibly(input: string): Promise<{ label: string; envPath: string; repoPath: string }> {
+    try {
+      // Try to resolve as worktree first
+      const worktree = await this.worktreeResolver.resolve(input);
+      return {
+        label: worktree.isMainRepo
+          ? `Main (${path.basename(worktree.path)})`
+          : `Worktree (${worktree.branchName})`,
+        envPath: path.join(worktree.path, '.env'),
+        repoPath: worktree.path
+      };
+    } catch (error) {
+      // If worktree resolution fails, treat as direct path
+      const absolutePath = path.resolve(input);
+
+      if (!existsSync(absolutePath)) {
+        throw new Error(`Path not found: ${absolutePath}`);
+      }
+
+      // Check if it's a git repository
+      const gitPath = path.join(absolutePath, '.git');
+      const isRepo = existsSync(gitPath);
+
+      return {
+        label: isRepo ? `Repository (${path.basename(absolutePath)})` : `Path (${path.basename(absolutePath)})`,
+        envPath: path.join(absolutePath, '.env'),
+        repoPath: absolutePath
+      };
+    }
+  }
+
+  /**
    * Validate sync targets
    *
    * Ensures source and target are different
@@ -236,8 +305,12 @@ export class SyncTargetResolver {
    * @returns Validation result
    */
   validate(targets: SyncTargets): { valid: boolean; error?: string } {
+    // Normalize paths for comparison (resolve symlinks, relative paths, etc.)
+    const normalizedSource = path.resolve(targets.sourcePath);
+    const normalizedTarget = path.resolve(targets.targetPath);
+
     // Check if source and target are the same
-    if (targets.sourcePath === targets.targetPath) {
+    if (normalizedSource === normalizedTarget) {
       return {
         valid: false,
         error: 'Source and target cannot be the same'

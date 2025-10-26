@@ -1,0 +1,113 @@
+# ========================================
+# Node.js & Dependencies
+# ========================================
+node_modules/
+jspm_packages/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ========================================
+# Build Output & TypeScript
+# ========================================
+dist/
+build/
+out/
+*.tsbuildinfo
+.tsbuildinfo
+
+# ========================================
+# Environment Files
+# ========================================
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+
+# ========================================
+# Logs & Reports
+# ========================================
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# ========================================
+# Testing & Coverage
+# ========================================
+coverage/
+*.lcov
+.nyc_output
+.cache
+lib-cov
+
+# ========================================
+# Runtime & Process
+# ========================================
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# ========================================
+# Editor & IDE
+# ========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode-test
+
+# ========================================
+# Package Manager Cache
+# ========================================
+.npm
+.eslintcache
+.stylelintcache
+.node_repl_history
+*.tgz
+
+# ========================================
+# Yarn v3
+# ========================================
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# ========================================
+# WorkForge Specific
+# ========================================
+# Backup files created by sync-env command
+.workforge/backups/*
+!.workforge/backups/.gitkeep
+
+# Audit logs
+.workforge/audit/*
+!.workforge/audit/.gitkeep
+
+# Temporary test files
+test-*.env
+tmp/
+temp/
+
+# ========================================
+# OS Files
+# ========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini

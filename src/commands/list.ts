@@ -80,13 +80,21 @@ export class ListCommand {
    * Get worktrees for current repository
    */
   private async getCurrentRepoWorktrees() {
-    // Detect current repository
-    const currentWorktree = await this.worktreeResolver.resolve(undefined, undefined);
-    const repoRoot = await this.worktreeResolver.getMainRepo(currentWorktree.path);
+    try {
+      // Try to detect current worktree
+      const currentWorktree = await this.worktreeResolver.resolve(undefined, undefined);
+      const repoRoot = await this.worktreeResolver.getMainRepo(currentWorktree.path);
 
-    // Get all worktrees
-    const worktrees = await this.worktreeResolver.getWorktrees(repoRoot);
-
-    return worktrees;
+      // Get all worktrees
+      return await this.worktreeResolver.getWorktrees(repoRoot);
+    } catch (error) {
+      // If we're in the main repo, we can still list worktrees
+      if (error instanceof Error && error.message.includes('main repository')) {
+        const cwd = process.cwd();
+        return await this.worktreeResolver.getWorktrees(cwd);
+      }
+      // Re-throw other errors
+      throw error;
+    }
   }
 }

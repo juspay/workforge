@@ -7,9 +7,9 @@ import { existsSync } from 'fs';
  *
  * Compares environment variables between two .env files and generates
  * a structured diff showing:
- * - Added variables (in target, not in source)
- * - Removed variables (in source, not in target)
- * - Modified variables (in both, different values)
+ * - Added variables (in source, not in target - will be added to target)
+ * - Removed variables (in target, not in source - will be removed from target)
+ * - Modified variables (in both, different values - target will be updated)
  * - Unchanged variables (in both, same values)
  */
 export class EnvDiffer {
@@ -67,19 +67,19 @@ export class EnvDiffer {
     const sourceKeys = new Set(sourceVars.keys());
     const targetKeys = new Set(targetVars.keys());
 
-    // Find added variables (in target, not in source)
-    for (const key of targetKeys) {
-      if (!sourceKeys.has(key)) {
-        const targetVar = targetVars.get(key)!;
-        added.push(targetVar);
-      }
-    }
-
-    // Find removed variables (in source, not in target)
+    // Find added variables (in source, not in target - will be added to target)
     for (const key of sourceKeys) {
       if (!targetKeys.has(key)) {
         const sourceVar = sourceVars.get(key)!;
-        removed.push(sourceVar);
+        added.push(sourceVar);
+      }
+    }
+
+    // Find removed variables (in target, not in source - will be removed from target)
+    for (const key of targetKeys) {
+      if (!sourceKeys.has(key)) {
+        const targetVar = targetVars.get(key)!;
+        removed.push(targetVar);
       }
     }
 
@@ -93,19 +93,19 @@ export class EnvDiffer {
           // Unchanged
           unchanged.push(sourceVar);
         } else {
-          // Modified
+          // Modified - show current target value as old, source value as new
           modified.push({
             key,
-            oldValue: sourceVar.value,
-            newValue: targetVar.value,
-            oldLineNumber: sourceVar.lineNumber,
-            newLineNumber: targetVar.lineNumber,
-            oldComment: sourceVar.comment,
-            newComment: targetVar.comment,
-            oldHasQuotes: sourceVar.hasQuotes,
-            newHasQuotes: targetVar.hasQuotes,
-            oldQuoteType: sourceVar.quoteType,
-            newQuoteType: targetVar.quoteType
+            oldValue: targetVar.value,  // Current value in target
+            newValue: sourceVar.value,  // New value from source
+            oldLineNumber: targetVar.lineNumber,
+            newLineNumber: sourceVar.lineNumber,
+            oldComment: targetVar.comment,
+            newComment: sourceVar.comment,
+            oldHasQuotes: targetVar.hasQuotes,
+            newHasQuotes: sourceVar.hasQuotes,
+            oldQuoteType: targetVar.quoteType,
+            newQuoteType: sourceVar.quoteType
           });
         }
       }
