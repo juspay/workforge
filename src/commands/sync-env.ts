@@ -9,7 +9,7 @@ import { WorktreeResolver } from '../core/WorktreeResolver.js';
 import { Logger } from '../ui/Logger.js';
 import { DiffDisplay } from '../ui/DiffDisplay.js';
 import { SyncPrompt } from '../ui/SyncPrompt.js';
-import { SyncEnvOptions } from '../types/index.js';
+import { SyncEnvOptions, SyncResult } from '../types/index.js';
 
 /**
  * Sync-Env Command
@@ -77,7 +77,7 @@ export class SyncEnvCommand {
       // Validate targets
       const validation = this.syncTargetResolver.validate(targets);
       if (!validation.valid) {
-        this.logger.error(validation.error || 'Invalid sync targets');
+        this.logger.error(validation.errors?.[0] || 'Invalid sync targets');
         process.exit(1);
       }
 
@@ -244,7 +244,7 @@ export class SyncEnvCommand {
   /**
    * Display summary
    */
-  private displaySummary(syncResult: any, backupCreated: boolean): void {
+  private displaySummary(syncResult: SyncResult, backupCreated: boolean): void {
     this.logger.subheader('Summary:');
 
     if (syncResult.addedCount > 0) {

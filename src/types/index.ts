@@ -1,34 +1,86 @@
 /**
  * WorkForge v3.0 - TypeScript Type Definitions
  *
- * This file contains all TypeScript interfaces and types used throughout the application.
+ * This file contains all TypeScript type definitions used throughout the application.
+ * Following DRY principles - all types centralized here with no duplicates.
  */
+
+// ============================================================================
+// COMMAND CONFIGURATION TYPES
+// ============================================================================
 
 /**
  * Workspace configuration for create command
  */
-export interface WorkspaceConfig {
+export type WorkspaceConfig = {
   type: string;              // Branch type (feat, fix, doc, etc.)
   name: string;              // Branch name (kebab-case)
   base: string;              // Base branch to checkout from
   yes: boolean;              // Skip confirmations
   ticketId?: string;         // Optional Jira ticket ID
-}
+};
 
 /**
  * Path configuration for worktree
  */
-export interface PathConfig {
+export type PathConfig = {
   repoRoot: string;          // Absolute path to main repository
   workspaceParent: string;   // Parent directory (e.g., ../feat)
   workspacePath: string;     // Full worktree path
   branchName: string;        // Git branch name
-}
+};
+
+/**
+ * Command options for close
+ */
+export type CloseOptions = {
+  path?: string;
+  name?: string;
+  force: boolean;
+  deleteBranch: boolean;
+  skipSync: boolean;         // Skip environment sync
+  yes: boolean;
+  dryRun: boolean;
+};
+
+/**
+ * Command options for sync-env
+ */
+export type SyncEnvOptions = {
+  from?: string;
+  to?: string;
+  between?: string;
+  yes: boolean;
+  dryRun: boolean;
+};
+
+/**
+ * Command options for list
+ */
+export type ListOptions = {
+  all: boolean;
+  json: boolean;             // Output as JSON
+  simple: boolean;           // Simple one-line format
+  sortBy?: 'name' | 'path' | 'age';
+};
+
+/**
+ * Command options for cleanup
+ */
+export type CleanupOptions = {
+  olderThan?: number;        // Days
+  dryRun: boolean;
+  yes: boolean;
+};
+
+// ============================================================================
+// WORKTREE & REPOSITORY TYPES
+// ============================================================================
 
 /**
  * Information about a worktree
  */
-export interface WorktreeInfo {
+export type WorktreeInfo = {
   path: string;              // Absolute path to worktree
   branchName: string;        // Associated branch name
   isMainRepo: boolean;       // True if this is the main repository
@@ -36,12 +88,12 @@ export interface WorktreeInfo {
   remoteUrl?: string;        // Git remote origin URL
   isLocked: boolean;         // Whether worktree is locked
   isPrunable: boolean;       // Whether worktree can be pruned
-}
+};
 
 /**
  * Safety check results before closing worktree
  */
-export interface SafetyCheckResult {
+export type SafetyCheckResult = {
   canClose: boolean;         // Can we close the worktree?
   warnings: string[];        // Non-blocking warnings
 
@@ -61,35 +113,40 @@ export interface SafetyCheckResult {
   isDetachedHead: boolean;
   isMergeInProgress: boolean;
   isRebaseInProgress: boolean;
-}
+};
+
+/**
+ * Project metadata
+ */
+export type ProjectMetadata = {
+  projectId: string;         // SHA-256 hash of remote URL
+  remoteUrl: string;         // Git remote origin URL
+  repoPath: string;          // Absolute path to repository
+  repoName: string;          // Repository directory name
+  createdAt: string;         // ISO 8601 timestamp
+  lastAccessed: string;      // ISO 8601 timestamp
+};
+
+// ============================================================================
+// ENVIRONMENT VARIABLE TYPES
+// ============================================================================
 
 /**
  * Parsed environment variable
  */
-export interface EnvVariable {
+export type EnvVariable = {
   key: string;               // Variable name
   value: string;             // Variable value
   lineNumber?: number;       // Line number in original file
   comment?: string;          // Inline comment if present
   hasQuotes?: boolean;       // Whether value was quoted
   quoteType?: 'single' | 'double';
-}
-
-/**
- * Environment file diff result
- */
-export interface EnvDiff {
-  added: EnvVariable[];      // Variables to add
-  removed: EnvVariable[];    // Variables to remove
-  modified: EnvModification[];
-  unchanged: EnvVariable[];
-  targets?: SyncTargets;     // Associated sync targets
-}
+};
 
 /**
  * Modified environment variable
  */
-export interface EnvModification {
+export type EnvModification = {
   key: string;
   oldValue: string;          // Value in source
   newValue: string;          // Value in target
@@ -101,23 +158,38 @@ export interface EnvModification {
   newHasQuotes?: boolean;
   oldQuoteType?: 'single' | 'double';
   newQuoteType?: 'single' | 'double';
-}
+};
+
+/**
+ * Environment file diff result
+ */
+export type EnvDiff = {
+  added: EnvVariable[];      // Variables to add
+  removed: EnvVariable[];    // Variables to remove
+  modified: EnvModification[];
+  unchanged: EnvVariable[];
+  targets?: SyncTargets;     // Associated sync targets
+};
+
+// ============================================================================
+// SYNC OPERATION TYPES
+// ============================================================================
 
 /**
  * User's sync decision
  */
-export interface SyncDecision {
+export type SyncDecision = {
   addedKeys: Set<string>;    // Keys of added vars to sync
   modifiedKeys: Set<string>; // Keys of modified vars to sync
   removedKeys: Set<string>;  // Keys of removed vars to sync (delete)
   syncAll: boolean;          // User chose to sync all
   cancel?: boolean;          // User chose to cancel (optional, defaults to false)
-}
+};
 
 /**
  * Sync operation result
  */
-export interface SyncResult {
+export type SyncResult = {
   success: boolean;
   backupPath?: string;
   backupCreated: boolean;
@@ -129,12 +201,12 @@ export interface SyncResult {
   removedKeys?: string[];    // Keys that were removed
   errors: string[];
   error?: string;            // Single error message for compatibility
-}
+};
 
 /**
  * Source and target for sync operation
  */
-export interface SyncTargets {
+export type SyncTargets = {
   sourcePath: string;        // Full path to source .env
   targetPath: string;        // Full path to target .env
   sourceLabel: string;       // Display label (e.g., "Main (project)")
@@ -151,12 +223,28 @@ export interface SyncTargets {
     type: 'main-repo' | 'worktree';
     branchName?: string;
   };
-}
+};
+
+// ============================================================================
+// BACKUP & AUDIT TYPES
+// ============================================================================
+
+/**
+ * Backup information
+ */
+export type BackupInfo = {
+  fileName: string;          // Filename
+  filePath: string;          // Absolute path
+  size: number;              // File size in bytes
+  createdAt: Date;           // Creation timestamp
+  timestamp: Date;           // Alias for createdAt
+  ageInDays: number;         // Age in days
+};
 
 /**
  * Audit log operation record
  */
-export interface AuditOperation {
+export type AuditOperation = {
   id?: string;               // UUID (added by logger)
   timestamp: string;         // ISO 8601 timestamp
   operation: 'create' | 'close' | 'sync';
@@ -181,36 +269,16 @@ export interface AuditOperation {
   };
   status?: 'success' | 'failure' | 'partial';
   error?: string;
-}
+};
 
-/**
- * Project metadata
- */
-export interface ProjectMetadata {
-  projectId: string;         // SHA-256 hash of remote URL
-  remoteUrl: string;         // Git remote origin URL
-  repoPath: string;          // Absolute path to repository
-  repoName: string;          // Repository directory name
-  createdAt: string;         // ISO 8601 timestamp
-  lastAccessed: string;      // ISO 8601 timestamp
-}
-
-/**
- * Backup information
- */
-export interface BackupInfo {
-  fileName: string;          // Filename
-  filePath: string;          // Absolute path
-  size: number;              // File size in bytes
-  createdAt: Date;           // Creation timestamp
-  timestamp: Date;           // Alias for createdAt
-  ageInDays: number;         // Age in days
-}
+// ============================================================================
+// CONFIGURATION TYPES
+// ============================================================================
 
 /**
  * Global configuration
  */
-export interface Config {
+export type Config = {
   version: string;
   preferences: {
     defaultBaseBranch: string;
@@ -238,57 +306,166 @@ export interface Config {
     verboseOutput: boolean;
     showProgressIndicators: boolean;
   };
-}
+};
 
 /**
- * Command options for close
+ * Generic config value type for dynamic access
  */
-export interface CloseOptions {
-  path?: string;
-  name?: string;
-  force: boolean;
-  deleteBranch: boolean;
-  skipSync: boolean;         // Skip environment sync
-  yes: boolean;
-  dryRun: boolean;
-}
+export type ConfigValue =
+  | string
+  | number
+  | boolean
+  | ConfigObject
+  | ConfigArray;
+
+export type ConfigObject = {
+  [key: string]: ConfigValue;
+};
+
+export type ConfigArray = ConfigValue[];
 
 /**
- * Command options for sync-env
+ * Generic config path - allows any nested path
  */
-export interface SyncEnvOptions {
-  from?: string;
-  to?: string;
-  between?: string;
-  yes: boolean;
-  dryRun: boolean;
-}
-
-/**
- * Command options for list
- */
-export interface ListOptions {
-  all: boolean;
-  json: boolean;             // Output as JSON
-  simple: boolean;           // Simple one-line format
-  sortBy?: 'name' | 'path' | 'age';
-}
-
-/**
- * Command options for cleanup
- */
-export interface CleanupOptions {
-  olderThan?: number;        // Days
-  dryRun: boolean;
-  yes: boolean;
-}
+export type ConfigPath = string;
 
 /**
  * Package manager detection result
  */
-export interface PackageManagerInfo {
+export type PackageManagerInfo = {
   manager: 'npm' | 'pnpm' | 'yarn';
   command: string;
   args: string[];
   lockFile: string;
-}
+};
+
+// ============================================================================
+// NEW CONSOLIDATED TYPES (DRY - No Duplicates)
+// ============================================================================
+
+/**
+ * Standard operation result (consolidated from 6 duplicate patterns)
+ * Replaces all inline { success, message } and { success, message, warnings } types
+ */
+export type OperationResult = {
+  success: boolean;
+  message: string;
+  warnings?: string[];       // Optional - consolidates both patterns
+};
+
+/**
+ * Validation result (consolidated from 2 patterns)
+ * Replaces all inline { valid, error } types
+ */
+export type ValidationResult = {
+  valid: boolean;
+  errors?: string[];         // Plural - handles both single and multiple errors
+};
+
+/**
+ * Resolved path information for sync operations
+ */
+export type ResolvedPath = {
+  label: string;
+  envPath: string;
+  repoPath: string;
+};
+
+/**
+ * Worktree removal strategy
+ */
+export type RemovalStrategy = {
+  strategy: 'remove' | 'prune' | 'force-remove';
+  reason: string;
+};
+
+/**
+ * Environment diff summary
+ */
+export type DiffSummary = {
+  addedCount: number;
+  removedCount: number;
+  modifiedCount: number;
+  unchangedCount: number;
+  totalChanges: number;
+  hasChanges: boolean;
+};
+
+/**
+ * Dry run result for sync preview
+ */
+export type DryRunResult = {
+  wouldAdd: string[];
+  wouldModify: string[];
+  wouldRemove: string[];
+};
+
+/**
+ * Audit statistics
+ */
+export type AuditStatistics = {
+  totalOperations: number;
+  successfulOperations: number;
+  failedOperations: number;
+  totalAdded: number;
+  totalModified: number;
+  totalRemoved: number;
+  lastOperation: Date | null;
+};
+
+/**
+ * Branch deletion recommendation
+ */
+export type BranchDeletionRecommendation = {
+  shouldDelete: boolean;
+  requiresForce: boolean;
+  message: string;
+};
+
+/**
+ * Related branches information
+ */
+export type RelatedBranches = {
+  local: boolean;
+  remote: string[];
+};
+
+/**
+ * Parsed value from .env file (internal parsing type)
+ */
+export type ParsedValue = {
+  value: string;
+  hasQuotes: boolean;
+  quoteType?: 'single' | 'double';
+  comment?: string;
+};
+
+/**
+ * Multiline start detection result (internal parsing type)
+ */
+export type MultilineStart = {
+  key: string;
+} | null;
+
+/**
+ * Package.json structure
+ */
+export type PackageJson = {
+  name: string;
+  version: string;
+  [key: string]: ConfigValue;
+};
+
+// ============================================================================
+// ERROR HANDLING TYPES
+// ============================================================================
+
+/**
+ * Normalized error structure for safe error handling
+ * Use with toError() utility to safely handle any thrown value
+ */
+export type ErrorLike = {
+  message: string;
+  stack?: string;
+  name?: string;
+};

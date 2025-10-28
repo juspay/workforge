@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { Config } from '../types/index.js';
+import { Config, ConfigValue, ConfigObject, ConfigPath } from '../types/index.js';
 
 /**
  * Default configuration for WorkForge
@@ -82,7 +82,7 @@ export class ConfigManager {
    *
    * @param key - Dot-separated path (e.g., 'backup.maxBackupsPerProject')
    */
-  get(key: string): any {
+  get(key: ConfigPath): ConfigValue {
     const config = this.load();
     return this.getNestedValue(config, key);
   }
@@ -93,7 +93,7 @@ export class ConfigManager {
    * @param key - Dot-separated path (e.g., 'backup.maxBackupsPerProject')
    * @param value - Value to set
    */
-  set(key: string, value: any): void {
+  set(key: ConfigPath, value: ConfigValue): void {
     const config = this.load();
     this.setNestedValue(config, key, value);
     this.save(config);
@@ -121,8 +121,10 @@ export class ConfigManager {
     const result = { ...defaults };
 
     for (const key in user) {
-      if (user.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(user, key)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userValue = (user as any)[key];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const defaultValue = (defaults as any)[key];
 
         if (
@@ -134,9 +136,11 @@ export class ConfigManager {
           !Array.isArray(defaultValue)
         ) {
           // Recursively merge objects
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (result as any)[key] = this.mergeObjects(defaultValue, userValue);
         } else {
           // Direct assignment for primitives and arrays
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (result as any)[key] = userValue;
         }
       }
@@ -148,11 +152,11 @@ export class ConfigManager {
   /**
    * Merge two objects recursively
    */
-  private mergeObjects(obj1: any, obj2: any): any {
+  private mergeObjects(obj1: ConfigObject, obj2: ConfigObject): ConfigObject {
     const result = { ...obj1 };
 
     for (const key in obj2) {
-      if (obj2.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(obj2, key)) {
         const val2 = obj2[key];
         const val1 = obj1[key];
 
@@ -164,7 +168,7 @@ export class ConfigManager {
           val1 !== null &&
           !Array.isArray(val1)
         ) {
-          result[key] = this.mergeObjects(val1, val2);
+          result[key] = this.mergeObjects(val1 as ConfigObject, val2 as ConfigObject);
         } else {
           result[key] = val2;
         }
@@ -177,15 +181,17 @@ export class ConfigManager {
   /**
    * Get value from nested path (e.g., 'backup.maxBackupsPerProject')
    */
-  private getNestedValue(obj: any, path: string): any {
+  private getNestedValue(obj: ConfigObject, path: string): ConfigValue {
     const keys = path.split('.');
-    let current = obj;
+    let current: ConfigValue = obj;
 
     for (const key of keys) {
       if (current === null || current === undefined) {
-        return undefined;
+        return undefined as unknown as ConfigValue;
       }
-      current = current[key];
+      if (typeof current === 'object' && !Array.isArray(current)) {
+        current = (current as ConfigObject)[key];
+      }
     }
 
     return current;
@@ -194,16 +200,19 @@ export class ConfigManager {
   /**
    * Set value at nested path
    */
-  private setNestedValue(obj: any, path: string, value: any): void {
+  private setNestedValue(obj: ConfigObject, path: string, value: ConfigValue): void {
     const keys = path.split('.');
     const lastKey = keys.pop()!;
 
-    let current = obj;
+    let current: ConfigObject = obj;
     for (const key of keys) {
       if (!(key in current)) {
         current[key] = {};
       }
-      current = current[key];
+      const next = current[key];
+      if (typeof next === 'object' && !Array.isArray(next) && next !== null) {
+        current = next as ConfigObject;
+      }
     }
 
     current[lastKey] = value;

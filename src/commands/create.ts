@@ -2,10 +2,11 @@ import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, copyFileSync, mkdirSync, readFileSync } from 'fs';
 import * as path from 'path';
 import chalk from 'chalk';
-import { WorkspaceConfig, PathConfig } from '../types/index.js';
+import { WorkspaceConfig, PathConfig, WorktreeInfo, ErrorLike } from '../types/index.js';
 import { ConfigManager } from '../core/ConfigManager.js';
 import { ProjectIdentifier } from '../core/ProjectIdentifier.js';
 import { WorktreeResolver } from '../core/WorktreeResolver.js';
+import { toError } from '../utils/errors.js';
 
 /**
  * Create Command
@@ -55,7 +56,7 @@ export class CreateCommand {
       this.logSuccess();
       process.exit(0);
     } catch (error) {
-      this.handleError(error);
+      this.handleError(toError(error));
       process.exit(1);
     }
   }
@@ -261,7 +262,7 @@ export class CreateCommand {
     }
   }
 
-  private getWorktreeStatus(worktree: any): string {
+  private getWorktreeStatus(worktree: WorktreeInfo): string {
     try {
       const result = spawnSync('git', ['status', '--porcelain'], {
         cwd: worktree.path,
@@ -527,8 +528,8 @@ export class CreateCommand {
     } else if (existsSync(packageLock)) {
       return { manager: 'npm', command: 'npm', args: ['install'] };
     } else {
-      // Default to npm if no lock file found
-      return { manager: 'npm', command: 'npm', args: ['install'] };
+      // Default to pnpm if no lock file found
+      return { manager: 'pnpm', command: 'pnpm', args: ['install'] };
     }
   }
 
@@ -603,8 +604,8 @@ Next steps:
     console.log(`${prefix} ${message}`);
   }
 
-  private handleError(error: unknown): void {
-    const message = error instanceof Error ? error.message : String(error);
+  private handleError(error: ErrorLike): void {
+    const message = error.message;
     this.log('error', `Failed to create workspace: ${message}`);
   }
 }

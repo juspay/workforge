@@ -12,18 +12,18 @@ WorkForge v3.0 is a TypeScript CLI tool for managing Git worktrees with intellig
 
 ```bash
 # Build TypeScript to JavaScript
-npm run build
+pnpm run build
 
 # Run in development mode (without building)
-npm run dev
+pnpm run dev
 
 # Build before publishing
-npm run prepublishOnly
+pnpm run prepublishOnly
 
 # Test a specific command
-npm run dev -- create -t feat -n test-feature
-npm run dev -- sync-env --dry-run
-npm run dev -- list --json
+pnpm run dev -- create -t feat -n test-feature
+pnpm run dev -- sync-env --dry-run
+pnpm run dev -- list --json
 ```
 
 ---
@@ -634,16 +634,16 @@ All validation happens **before** any filesystem or Git operations:
 
 ```bash
 # Test create command
-npm run dev -- create -t feat -n test-feature --yes
+pnpm run dev -- create -t feat -n test-feature --yes
 
 # Test list command
-npm run dev -- list --json
+pnpm run dev -- list --json
 
 # Test sync-env command (dry run)
-npm run dev -- sync-env --dry-run
+pnpm run dev -- sync-env --dry-run
 
 # Test cleanup command (dry run)
-npm run dev -- cleanup --older-than 30 --dry-run
+pnpm run dev -- cleanup --older-than 30 --dry-run
 
 # Clean up test worktree
 git worktree remove ../feat/test-feature

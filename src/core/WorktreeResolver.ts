@@ -159,8 +159,8 @@ export class WorktreeResolver {
       throw new Error(`Worktree not found at path: ${absolutePath}`);
     }
 
-    // Check if it's a worktree or main repo
-    const isWorktree = await this.isWorktree(absolutePath);
+    // Check if it's a worktree or main repo (used for directory structure)
+    const _isWorktree = await this.isWorktree(absolutePath);
     const mainRepo = await this.getMainRepo(absolutePath);
 
     // Get all worktrees to find this one

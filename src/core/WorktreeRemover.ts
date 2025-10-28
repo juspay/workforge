@@ -1,6 +1,6 @@
 import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
-import { WorktreeInfo } from '../types/index.js';
+import { WorktreeInfo, OperationResult, RemovalStrategy } from '../types/index.js';
 
 /**
  * Worktree Remover
@@ -23,7 +23,7 @@ export class WorktreeRemover {
   async remove(
     worktree: WorktreeInfo,
     force: boolean = false
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<OperationResult> {
     // Check if worktree is locked
     if (worktree.isLocked && !force) {
       return {
@@ -108,7 +108,7 @@ export class WorktreeRemover {
    * @param worktree - Worktree information
    * @returns Result object with success status and message
    */
-  private async prune(worktree: WorktreeInfo): Promise<{ success: boolean; message: string }> {
+  private async prune(worktree: WorktreeInfo): Promise<OperationResult> {
     const result = spawnSync('git', ['worktree', 'prune'], {
       encoding: 'utf8',
       stdio: 'pipe'
@@ -154,10 +154,7 @@ export class WorktreeRemover {
    * @param worktree - Worktree information
    * @returns Recommended removal strategy
    */
-  getRemovalStrategy(worktree: WorktreeInfo): {
-    strategy: 'remove' | 'prune' | 'force-remove';
-    reason: string;
-  } {
+  getRemovalStrategy(worktree: WorktreeInfo): RemovalStrategy {
     if (worktree.isPrunable) {
       return {
         strategy: 'prune',
@@ -191,7 +188,7 @@ export class WorktreeRemover {
    * @param worktree - Worktree information
    * @returns Result object with success status and message
    */
-  async unlock(worktree: WorktreeInfo): Promise<{ success: boolean; message: string }> {
+  async unlock(worktree: WorktreeInfo): Promise<OperationResult> {
     if (!worktree.isLocked) {
       return {
         success: true,
@@ -227,7 +224,7 @@ export class WorktreeRemover {
   async lock(
     worktree: WorktreeInfo,
     reason?: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<OperationResult> {
     if (worktree.isLocked) {
       return {
         success: true,

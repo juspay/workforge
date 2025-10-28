@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { existsSync } from 'fs';
 import { WorktreeResolver } from './WorktreeResolver.js';
-import { SyncTargets, SyncEnvOptions } from '../types/index.js';
+import { SyncTargets, SyncEnvOptions, ResolvedPath, ValidationResult } from '../types/index.js';
 
 /**
  * Sync Target Resolver
@@ -265,7 +265,7 @@ export class SyncTargetResolver {
    * @param input - Path or worktree name
    * @returns Object with label and envPath
    */
-  private async resolvePathFlexibly(input: string): Promise<{ label: string; envPath: string; repoPath: string }> {
+  private async resolvePathFlexibly(input: string): Promise<ResolvedPath> {
     try {
       // Try to resolve as worktree first
       const worktree = await this.worktreeResolver.resolve(input);
@@ -304,7 +304,7 @@ export class SyncTargetResolver {
    * @param targets - Sync targets to validate
    * @returns Validation result
    */
-  validate(targets: SyncTargets): { valid: boolean; error?: string } {
+  validate(targets: SyncTargets): ValidationResult {
     // Normalize paths for comparison (resolve symlinks, relative paths, etc.)
     const normalizedSource = path.resolve(targets.sourcePath);
     const normalizedTarget = path.resolve(targets.targetPath);
@@ -313,7 +313,7 @@ export class SyncTargetResolver {
     if (normalizedSource === normalizedTarget) {
       return {
         valid: false,
-        error: 'Source and target cannot be the same'
+        errors: ['Source and target cannot be the same']
       };
     }
 
@@ -321,14 +321,14 @@ export class SyncTargetResolver {
     if (!existsSync(targets.sourcePath)) {
       return {
         valid: false,
-        error: `Source file not found: ${targets.sourcePath}`
+        errors: [`Source file not found: ${targets.sourcePath}`]
       };
     }
 
     if (!existsSync(targets.targetPath)) {
       return {
         valid: false,
-        error: `Target file not found: ${targets.targetPath}`
+        errors: [`Target file not found: ${targets.targetPath}`]
       };
     }
 

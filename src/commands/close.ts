@@ -4,7 +4,6 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { WorktreeResolver } from '../core/WorktreeResolver.js';
 import { SafetyChecker } from '../core/SafetyChecker.js';
-import { EnvFileParser } from '../core/EnvFileParser.js';
 import { EnvDiffer } from '../core/EnvDiffer.js';
 import { EnvSyncer } from '../core/EnvSyncer.js';
 import { BackupManager } from '../core/BackupManager.js';
@@ -15,7 +14,7 @@ import { ConfigManager } from '../core/ConfigManager.js';
 import { Logger } from '../ui/Logger.js';
 import { DiffDisplay } from '../ui/DiffDisplay.js';
 import { SyncPrompt } from '../ui/SyncPrompt.js';
-import { CloseOptions } from '../types/index.js';
+import { CloseOptions, SafetyCheckResult } from '../types/index.js';
 
 /**
  * Close Command
@@ -263,7 +262,7 @@ export class CloseCommand {
           this.logger.success(cleanupResult.message);
 
           // Show warnings
-          if (cleanupResult.warnings.length > 0) {
+          if (cleanupResult.warnings && cleanupResult.warnings.length > 0) {
             for (const warning of cleanupResult.warnings) {
               this.logger.warning(warning);
             }
@@ -289,7 +288,7 @@ export class CloseCommand {
   /**
    * Display safety check results
    */
-  private displaySafetyResults(result: any): void {
+  private displaySafetyResults(result: SafetyCheckResult): void {
     const blockingCount = this.safetyChecker.getBlockingIssueCount(result);
     const warningCount = this.safetyChecker.getWarningIssueCount(result);
 

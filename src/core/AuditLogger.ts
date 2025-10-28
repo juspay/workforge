@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, unl
 import * as path from 'path';
 import { ProjectIdentifier } from './ProjectIdentifier.js';
 import { ConfigManager } from './ConfigManager.js';
-import { AuditOperation, SyncResult } from '../types/index.js';
+import { AuditOperation, SyncResult, AuditStatistics } from '../types/index.js';
 
 /**
  * Audit Logger
@@ -287,15 +287,7 @@ export class AuditLogger {
    * @param repoRoot - Repository root
    * @returns Statistics object
    */
-  getStatistics(repoRoot: string): {
-    totalOperations: number;
-    successfulOperations: number;
-    failedOperations: number;
-    totalAdded: number;
-    totalModified: number;
-    totalRemoved: number;
-    lastOperation: Date | null;
-  } {
+  getStatistics(repoRoot: string): AuditStatistics {
     const history = this.getHistory(repoRoot);
 
     const stats = {

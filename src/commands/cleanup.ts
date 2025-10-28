@@ -5,7 +5,7 @@ import { ProjectIdentifier } from '../core/ProjectIdentifier.js';
 import { WorktreeResolver } from '../core/WorktreeResolver.js';
 import { ConfigManager } from '../core/ConfigManager.js';
 import { Logger } from '../ui/Logger.js';
-import { CleanupOptions } from '../types/index.js';
+import { CleanupOptions, BackupInfo } from '../types/index.js';
 
 /**
  * Cleanup Command
@@ -145,7 +145,7 @@ export class CleanupCommand {
   /**
    * Show backup preview
    */
-  private showBackupPreview(backupsToDelete: any[], totalBackups: number): void {
+  private showBackupPreview(backupsToDelete: BackupInfo[], totalBackups: number): void {
     this.logger.subheader('Backups to Delete:');
     this.logger.newline();
 

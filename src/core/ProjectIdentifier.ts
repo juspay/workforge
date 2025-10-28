@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
@@ -140,7 +140,6 @@ export class ProjectIdentifier {
       return [];
     }
 
-    const { readdirSync, statSync } = require('fs');
     const entries = readdirSync(projectsRoot);
 
     return entries

@@ -23,7 +23,7 @@ A powerful CLI tool for managing Git worktrees with intelligent environment vari
 - 🔍 **Smart Repository Detection**: Works from any directory in a Git repo or worktree
 - 🏢 **Internal Repository Support**: Special handling for internal Bitbucket repositories
 - 🎫 **Jira Integration**: Optional Jira ticket ID support with smart branch naming
-- 📦 **Package Manager Detection**: Automatically detects and uses npm, pnpm, or yarn
+- 📦 **Package Manager Detection**: Automatically detects and uses pnpm, npm, or yarn
 - 🚀 **Auto Dependency Installation**: Runs package manager install after worktree creation
 - 🛡️ **Pre-flight Checks**: Validates branches, paths, and prevents conflicts
 - 🌿 **Smart Branch Detection**: Auto-detects default branch (main, master, beta, etc.)
@@ -33,11 +33,11 @@ A powerful CLI tool for managing Git worktrees with intelligent environment vari
 
 ## Installation
 
-### Global NPM Package (Recommended)
+### Global Package Installation (Recommended)
 
 ```bash
-# Install globally via npm
-npm install -g workforge
+# Install globally via pnpm
+pnpm install -g workforge
 
 # Use anywhere
 workforge --type feat --name user-auth
@@ -49,7 +49,7 @@ wf --type fix --name memory-leak
 
 ```bash
 # Install in your project
-npm install --save-dev workforge
+pnpm install --save-dev workforge
 
 # Add to package.json scripts
 {
@@ -58,8 +58,8 @@ npm install --save-dev workforge
   }
 }
 
-# Use via npm script
-npm run worktree -- --type feat --name user-auth
+# Use via script
+pnpm worktree --type feat --name user-auth
 ```
 
 ## Quick Start
@@ -318,7 +318,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install WorkForge
-        run: npm install -g workforge
+        run: pnpm install -g workforge
 
       - name: Configure WorkForge
         run: |
@@ -340,8 +340,8 @@ jobs:
       - name: Build in worktree
         working-directory: ./build-ci-${{ github.run_number }}
         run: |
-          npm install
-          npm run build
+          pnpm install
+          pnpm run build
 
       - name: Cleanup
         if: always()
@@ -398,7 +398,7 @@ WorkForge stores global configuration at `~/.workforge/config.json`.
 - `defaultBaseBranch`: Default base branch for new worktrees (default: `"main"`)
 - `autoDeleteBranch`: Auto-delete branch when closing worktree (default: `false`)
 - `skipConfirmations`: Skip all confirmation prompts (default: `false`)
-- `packageManager`: Package manager to use: `auto`, `npm`, `pnpm`, or `yarn` (default: `"auto"`)
+- `packageManager`: Package manager to use: `auto`, `pnpm`, `npm`, or `yarn` (default: `"auto"`)
 
 **Backup:**
 - `enabled`: Enable automatic backups (default: `true`)
@@ -456,7 +456,7 @@ The tool automatically detects your project's package manager and runs the appro
 1. **pnpm-lock.yaml** found → Uses `pnpm install`
 2. **yarn.lock** found → Uses `yarn install`
 3. **package-lock.json** found → Uses `npm install`
-4. **No lock file** → Defaults to `npm install`
+4. **No lock file** → Defaults to `pnpm install`
 
 ### Automatic Installation
 - Runs after worktree creation and environment file copying
@@ -652,9 +652,9 @@ workforge -t fix -n performance-issue -j BZ-67890
 The tool automatically adapts to your project setup:
 
 ```bash
-# npm project (package-lock.json exists)
-workforge -t feat -n npm-feature
-# → Runs: npm install
+# pnpm project (pnpm-lock.yaml exists)
+workforge -t feat -n pnpm-feature
+# → Runs: pnpm install
 
 # yarn project (yarn.lock exists)
 workforge -t feat -n yarn-feature
@@ -705,18 +705,18 @@ workforge -t feat -n my-feature -j BZ12345   # ❌ Missing hyphen
 **"Failed to install dependencies"**
 ```bash
 # Check package manager is installed
-npm --version
 pnpm --version
+npm --version
 yarn --version
 
-# Install missing package manager
+# Install missing package manager (requires npm or other package manager)
 npm install -g pnpm
 # or
 npm install -g yarn
 
 # Manual installation
 cd ../feat/your-feature
-npm install  # or pnpm install, yarn install
+pnpm install  # or npm install, yarn install
 ```
 
 **Package manager detection issues**
@@ -724,7 +724,7 @@ npm install  # or pnpm install, yarn install
 # Force specific package manager by creating lock file
 touch pnpm-lock.yaml   # Forces pnpm
 touch yarn.lock        # Forces yarn
-touch package-lock.json # Forces npm
+touch pnpm-lock.yaml # Forces pnpm
 
 # Or run manually after worktree creation
 cd ../feat/your-feature
@@ -769,7 +769,7 @@ git remote get-url origin | grep bitbucket.juspay.net
 if [ -f "pnpm-lock.yaml" ]; then echo "pnpm";
 elif [ -f "yarn.lock" ]; then echo "yarn";
 elif [ -f "package-lock.json" ]; then echo "npm";
-else echo "npm (default)"; fi
+else echo "pnpm (default)"; fi
 
 # Test branch existence
 git rev-parse --verify BZ-12345-feat-branch-name 2>/dev/null || echo "Branch doesn't exist"
@@ -874,7 +874,7 @@ MIT License - see LICENSE file for details.
 
 ### v2.0.0
 - 🎫 **Jira Integration**: Support for internal Bitbucket repositories with ticket IDs
-- 📦 **Package Manager Detection**: Automatic npm/pnpm/yarn detection and installation
+- 📦 **Package Manager Detection**: Automatic pnpm/npm/yarn detection and installation
 - 🌿 **Smart Branch Detection**: Auto-detects default branch (main, master, beta, etc.)
 - 🏢 **Repository Type Detection**: Different handling for internal vs public repositories
 - 🚀 **Auto Dependency Installation**: Runs package manager install after worktree creation

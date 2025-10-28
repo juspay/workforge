@@ -323,7 +323,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install WorkForge
-        run: npm install -g workforge
+        run: pnpm install -g workforge
 
       - name: Configure WorkForge for CI
         run: |
@@ -349,8 +349,8 @@ jobs:
       - name: Build in worktree
         working-directory: ./build-ci-${{ github.run_number }}
         run: |
-          npm install
-          npm run build
+          pnpm install
+          pnpm run build
 
       - name: Cleanup
         if: always()
@@ -375,13 +375,13 @@ variables:
 build:
   stage: build
   script:
-    - npm install -g workforge
+    - pnpm install -g workforge
     - mkdir -p ~/.workforge
     - echo "$WORKFORGE_CONFIG" > ~/.workforge/config.json
     - workforge create -t build -n ci-${CI_PIPELINE_ID} --yes
     - cd build-ci-${CI_PIPELINE_ID}
-    - npm install
-    - npm run build
+    - pnpm install
+    - pnpm run build
   after_script:
     - workforge close -n build-ci-${CI_PIPELINE_ID} --yes --skip-sync || true
 ```
@@ -399,7 +399,7 @@ pipeline {
     stages {
         stage('Setup') {
             steps {
-                sh 'npm install -g workforge'
+                sh 'pnpm install -g workforge'
                 sh '''
                     mkdir -p ~/.workforge
                     cat > ~/.workforge/config.json << EOF
@@ -422,8 +422,8 @@ pipeline {
         stage('Build') {
             steps {
                 dir("build-${WORKFORGE_WORKTREE}") {
-                    sh 'npm install'
-                    sh 'npm run build'
+                    sh 'pnpm install'
+                    sh 'pnpm run build'
                 }
             }
         }

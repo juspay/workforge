@@ -1,6 +1,6 @@
 import { writeFileSync } from 'fs';
 import { EnvFileParser } from './EnvFileParser.js';
-import { EnvDiff, SyncDecision, SyncResult, EnvVariable } from '../types/index.js';
+import { EnvDiff, SyncDecision, SyncResult, EnvVariable, DryRunResult, ValidationResult } from '../types/index.js';
 
 /**
  * Environment Syncer
@@ -28,7 +28,7 @@ export class EnvSyncer {
    * @returns Sync result with counts and status
    */
   async sync(
-    sourcePath: string,
+    _sourcePath: string,
     targetPath: string,
     diff: EnvDiff,
     decision: SyncDecision
@@ -131,11 +131,7 @@ export class EnvSyncer {
    * @param decision - User sync decision
    * @returns Summary of changes that would be applied
    */
-  dryRun(diff: EnvDiff, decision: SyncDecision): {
-    wouldAdd: string[];
-    wouldModify: string[];
-    wouldRemove: string[];
-  } {
+  dryRun(diff: EnvDiff, decision: SyncDecision): DryRunResult {
     const wouldAdd: string[] = [];
     const wouldModify: string[] = [];
     const wouldRemove: string[] = [];
@@ -177,10 +173,7 @@ export class EnvSyncer {
    * @param decision - User sync decision
    * @returns Validation result with any errors
    */
-  validateDecision(diff: EnvDiff, decision: SyncDecision): {
-    valid: boolean;
-    errors: string[];
-  } {
+  validateDecision(diff: EnvDiff, decision: SyncDecision): ValidationResult {
     const errors: string[] = [];
 
     // Validate added keys

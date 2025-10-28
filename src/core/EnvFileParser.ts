@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { EnvVariable } from '../types/index.js';
+import { EnvVariable, ParsedValue, MultilineStart } from '../types/index.js';
 
 /**
  * Environment File Parser
@@ -168,12 +168,7 @@ export class EnvFileParser {
    * @param valuePart - String after the = sign
    * @returns Parsed value information
    */
-  private parseValue(valuePart: string): {
-    value: string;
-    hasQuotes: boolean;
-    quoteType?: 'single' | 'double';
-    comment?: string;
-  } {
+  private parseValue(valuePart: string): ParsedValue {
     const trimmed = valuePart.trim();
 
     // Check for quotes
@@ -329,7 +324,7 @@ export class EnvFileParser {
    * @param line - Line to check
    * @returns Key if multiline starts, null otherwise
    */
-  private startsMultiline(line: string): { key: string } | null {
+  private startsMultiline(line: string): MultilineStart | null {
     const equalIndex = line.indexOf('=');
     if (equalIndex === -1) return null;
 

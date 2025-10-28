@@ -1,5 +1,5 @@
 import { EnvFileParser } from './EnvFileParser.js';
-import { EnvVariable, EnvDiff, EnvModification, SyncTargets } from '../types/index.js';
+import { EnvVariable, EnvDiff, EnvModification, SyncTargets, DiffSummary } from '../types/index.js';
 import { existsSync } from 'fs';
 
 /**
@@ -150,14 +150,7 @@ export class EnvDiffer {
    * @param diff - EnvDiff object
    * @returns Summary object with counts
    */
-  getSummary(diff: EnvDiff): {
-    addedCount: number;
-    removedCount: number;
-    modifiedCount: number;
-    unchangedCount: number;
-    totalChanges: number;
-    hasChanges: boolean;
-  } {
+  getSummary(diff: EnvDiff): DiffSummary {
     const addedCount = diff.added.length;
     const removedCount = diff.removed.length;
     const modifiedCount = diff.modified.length;

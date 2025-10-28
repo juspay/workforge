@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { SafetyCheckResult } from '../types/index.js';
+import { SafetyCheckResult, OperationResult, BranchDeletionRecommendation, RelatedBranches } from '../types/index.js';
 
 /**
  * Branch Cleaner
@@ -25,7 +25,7 @@ export class BranchCleaner {
     repoRoot: string,
     safety: SafetyCheckResult,
     force: boolean = false
-  ): Promise<{ success: boolean; message: string; warnings: string[] }> {
+  ): Promise<OperationResult> {
     const warnings: string[] = [];
 
     // Check if branch is main/master
@@ -115,7 +115,7 @@ export class BranchCleaner {
     branchName: string,
     repoRoot: string,
     remoteName: string = 'origin'
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<OperationResult> {
     const result = spawnSync('git', ['push', remoteName, '--delete', branchName], {
       cwd: repoRoot,
       encoding: 'utf8',
@@ -198,11 +198,7 @@ export class BranchCleaner {
    * @param safety - Safety check result
    * @returns Recommendation object
    */
-  getRecommendation(safety: SafetyCheckResult): {
-    shouldDelete: boolean;
-    requiresForce: boolean;
-    message: string;
-  } {
+  getRecommendation(safety: SafetyCheckResult): BranchDeletionRecommendation {
     // Branch is merged - safe to delete
     if (safety.isMerged) {
       return {
@@ -236,10 +232,7 @@ export class BranchCleaner {
    * @param repoRoot - Repository root path
    * @returns List of related branches (local and remote)
    */
-  getRelatedBranches(branchName: string, repoRoot: string): {
-    local: boolean;
-    remote: string[];
-  } {
+  getRelatedBranches(branchName: string, repoRoot: string): RelatedBranches {
     const related = {
       local: false,
       remote: [] as string[]

@@ -15,7 +15,7 @@ import { Logger } from './Logger.js';
 export class DiffDisplay {
   private logger: Logger;
   private readonly maxValueLength = 40;
-  private readonly columnWidth = 50;
+  private readonly _columnWidth = 50;
 
   constructor(logger?: Logger) {
     this.logger = logger || new Logger();
@@ -370,7 +370,7 @@ export class DiffDisplay {
    * @param width - Target width
    * @returns Padded string
    */
-  private pad(str: string, width: number): string {
+  private _pad(str: string, width: number): string {
     return str.padEnd(width, ' ');
   }
 }

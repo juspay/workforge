@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync, copyFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, copyFileSync } from 'fs';
 import * as path from 'path';
 import { ProjectIdentifier } from './ProjectIdentifier.js';
 import { ConfigManager } from './ConfigManager.js';
@@ -55,8 +55,8 @@ export class BackupManager {
       throw new Error(`Environment file not found: ${envPath}`);
     }
 
-    // Generate project ID
-    const projectId = ProjectIdentifier.generateId(repoRoot);
+    // Generate project ID (used for directory structure)
+    const _projectId = ProjectIdentifier.generateId(repoRoot);
 
     // Get backup directory
     const backupDir = ProjectIdentifier.getBackupDir(repoRoot);
@@ -109,7 +109,7 @@ export class BackupManager {
 
         // Extract timestamp from filename
         const timestampMatch = file.match(/\.env\.backup\.(.+)$/);
-        const timestamp = timestampMatch ? timestampMatch[1] : '';
+        const _timestamp = timestampMatch ? timestampMatch[1] : '';
 
         backups.push({
           fileName: file,
