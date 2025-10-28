@@ -3,9 +3,10 @@
 # ========================================
 node_modules/
 jspm_packages/
+# Note: pnpm-lock.yaml should be committed for reproducible builds
+# Only ignore other package manager lock files
 package-lock.json
 yarn.lock
-pnpm-lock.yaml
 
 # ========================================
 # Build Output & TypeScript
