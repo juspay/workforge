@@ -62,6 +62,9 @@ src/
 │   ├── DiffDisplay.ts # Diff visualization
 │   ├── SyncPrompt.ts  # Interactive prompts
 │   └── ListDisplay.ts # List formatting
+├── utils/             # Utility functions
+│   ├── errors.ts      # Error handling
+│   └── strings.ts     # String transformations
 ├── types/
 │   └── index.ts       # TypeScript interfaces
 └── index.ts           # CLI router (yargs)
@@ -395,6 +398,8 @@ Creates new Git worktrees with environment setup.
 
 **Workflow:**
 1. Validate inputs (type, name, ticket ID)
+   - Auto-convert name to kebab-case using toKebabCase()
+   - Log conversion if name changed
 2. Discover repository (works from worktrees too)
 3. Detect default branch
 4. Detect repository type (public vs internal)
@@ -680,6 +685,23 @@ Modify `detectRepositoryType()` in `create.ts` to check for different remote URL
 ### Adding New Package Managers
 
 Extend `detectPackageManager()` in `create.ts` with new lock file checks.
+
+### String Utilities
+
+The `src/utils/strings.ts` module provides string transformation functions:
+
+- `toKebabCase(input: string): string` - Convert any string to kebab-case format
+  - Handles spaces, underscores, special characters
+  - Idempotent (already kebab-case strings pass through unchanged)
+  - Used for branch name normalization in create command
+
+**Example:**
+```typescript
+import { toKebabCase } from '../utils/strings.js';
+
+const branchName = toKebabCase('My Feature Name');
+// Result: 'my-feature-name'
+```
 
 ---
 
