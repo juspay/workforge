@@ -163,7 +163,9 @@ export class CreateCommand {
       }
 
       // Fallback: check if main exists, otherwise try common alternatives
+      this.log('info', 'Scanning for available branches...');
       const commonBranches = ['main', 'master', 'develop', 'beta'];
+      const foundBranches: string[] = [];
 
       for (const branch of commonBranches) {
         try {
@@ -173,13 +175,22 @@ export class CreateCommand {
           });
 
           if (result.status === 0) {
-            this.config.base = branch;
-            this.log('success', `✅ Using existing branch as base: ${branch}`);
-            return;
+            foundBranches.push(branch);
           }
         } catch (error) {
           // Continue to next branch
         }
+      }
+
+      if (foundBranches.length > 0) {
+        this.config.base = foundBranches[0];
+        this.log('success', `✅ Using base branch: ${this.config.base}`);
+
+        if (foundBranches.length > 1) {
+          this.log('info', `💡 Other available branches: ${foundBranches.slice(1).join(', ')}`);
+          this.log('info', `   Use --base <branch> to choose a different base`);
+        }
+        return;
       }
 
       // If no common branch found, get current branch
