@@ -415,6 +415,31 @@ export class CreateCommand {
       throw new Error('Paths not calculated');
     }
 
+    // Validate base branch exists
+    this.log('info', 'Validating base branch...');
+    try {
+      const result = spawnSync('git', ['show-ref', '--verify', `refs/heads/${this.config.base}`], {
+        cwd: this.paths.repoRoot,
+        stdio: 'pipe'
+      });
+
+      if (result.status !== 0) {
+        const available = this.listAllBranches();
+        throw new Error(
+          `Base branch "${this.config.base}" not found.\n` +
+          `  Available branches: ${available.join(', ')}\n` +
+          `  Use --base <branch> to specify a different base.`
+        );
+      }
+
+      this.log('success', `✅ Base branch "${this.config.base}" exists`);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        throw error;
+      }
+      // Other errors are non-fatal, continue
+    }
+
     // Check if branch already exists
     try {
       const result = spawnSync('git', ['branch', '--list', this.paths.branchName], {
