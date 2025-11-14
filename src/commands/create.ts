@@ -7,6 +7,7 @@ import { ConfigManager } from '../core/ConfigManager.js';
 import { ProjectIdentifier } from '../core/ProjectIdentifier.js';
 import { WorktreeResolver } from '../core/WorktreeResolver.js';
 import { toError } from '../utils/errors.js';
+import { toKebabCase } from '../utils/strings.js';
 
 /**
  * Create Command
@@ -72,9 +73,23 @@ export class CreateCommand {
     // Normalize type to lowercase
     this.config.type = this.config.type.toLowerCase();
 
-    // Validate name - must be kebab-case
+    // Auto-convert name to kebab-case
+    const originalName = this.config.name;
+    this.config.name = toKebabCase(this.config.name);
+
+    // Inform user if conversion happened
+    if (originalName !== this.config.name) {
+      this.log('info', `Converted name to kebab-case: ${this.config.name}`);
+    }
+
+    // Safety check: ensure conversion produced valid result
+    if (!this.config.name || this.config.name.length === 0) {
+      throw new Error(`Invalid name: "${originalName}" cannot be converted to valid kebab-case format.`);
+    }
+
+    // Additional safety: validate final format
     if (!/^[a-z0-9\-]+$/.test(this.config.name)) {
-      throw new Error(`Invalid name "${this.config.name}". Must be kebab-case (lowercase letters, numbers, and hyphens only).`);
+      throw new Error(`Invalid name: "${originalName}" produced invalid characters after conversion.`);
     }
 
     this.log('success', '✅ Input validation passed');
