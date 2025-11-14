@@ -64,7 +64,7 @@ async function main(): Promise<void> {
           .option('base', {
             alias: 'b',
             type: 'string',
-            description: 'Base branch to checkout from',
+            description: 'Base branch to checkout from (auto-detects main/master/develop/beta if not specified)',
             default: 'main'
           })
           .option('ticket', {
@@ -86,7 +86,9 @@ async function main(): Promise<void> {
           })
           .example('$0 create -t feat -n auth', 'Create feat/auth worktree')
           .example('$0 create -t fix -n bug -b develop', 'Create from develop branch')
-          .example('$0 create -t feat -n api -j BZ-123', 'Create with Jira ticket');
+          .example('$0 create -t feat -n api -b beta --yes', 'Create from beta branch')
+          .example('$0 create -t feat -n api -j BZ-123', 'Create with Jira ticket')
+          .example('$0 create -t fix -n "Bug Fix Name" --yes', 'Name auto-converted to kebab-case');
       },
       async (argv) => {
         const config: WorkspaceConfig = {
