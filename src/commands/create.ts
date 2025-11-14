@@ -296,6 +296,36 @@ export class CreateCommand {
     }
   }
 
+  /**
+   * Get list of all local branches in repository
+   * @returns Array of branch names, or empty array if error
+   */
+  private listAllBranches(): string[] {
+    if (!this.paths?.repoRoot) {
+      return [];
+    }
+
+    try {
+      const result = spawnSync('git', ['branch', '--format=%(refname:short)'], {
+        cwd: this.paths.repoRoot,
+        encoding: 'utf8',
+        stdio: 'pipe'
+      });
+
+      if (result.stdout) {
+        return result.stdout
+          .trim()
+          .split('\n')
+          .map(b => b.trim())
+          .filter(b => b.length > 0);
+      }
+    } catch {
+      // Ignore errors, return empty array
+    }
+
+    return [];
+  }
+
   private async promptForTicketId(): Promise<void> {
     // If ticket ID already provided via command line, use it
     if (this.config.ticketId) {
