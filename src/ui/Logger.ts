@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import stringWidth from 'string-width';
 import { ConfigManager } from '../core/ConfigManager.js';
 
 /**
@@ -176,7 +177,12 @@ export class Logger {
     for (let i = 0; i < columns.length; i++) {
       const column = columns[i] || '';
       const width = widths[i] || 20;
-      row += column.padEnd(width, ' ') + '  ';
+
+      // Calculate visual width (ignoring ANSI codes)
+      const visualWidth = stringWidth(column);
+      const padding = Math.max(0, width - visualWidth);
+
+      row += column + ' '.repeat(padding) + '  ';
     }
     console.log(row.trimEnd());
   }
