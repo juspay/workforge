@@ -88,6 +88,7 @@ async function main(): Promise<void> {
           .example('$0 create -t fix -n bug -b develop', 'Create from develop branch')
           .example('$0 create -t feat -n api -b beta --yes', 'Create from beta branch')
           .example('$0 create -t feat -n api -j BZ-123', 'Create with Jira ticket')
+          .example('$0 create -t feat -n auth -j BZ-456', 'Create feat/BZ-456-auth worktree')
           .example('$0 create -t fix -n "Bug Fix Name" --yes', 'Name auto-converted to kebab-case');
       },
       async (argv) => {
