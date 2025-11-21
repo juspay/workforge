@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import path from 'path';
 import { WorktreeInfo } from '../types/index.js';
 import { Logger } from './Logger.js';
 
@@ -74,7 +75,8 @@ export class ListDisplay {
         ? chalk.cyan('(main)')
         : chalk.cyan(worktree.branchName);
 
-      const pathDisplay = this.truncatePath(worktree.path, 40);
+      const relativePath = this.getRelativePath(worktree.path);
+      const pathDisplay = this.truncatePath(relativePath, 40);
 
       const commit = chalk.gray(this.truncate(worktree.commitHash || '', 10));
 
@@ -96,6 +98,7 @@ export class ListDisplay {
     const output = worktrees.map(w => ({
       branchName: w.branchName,
       path: w.path,
+      relativePath: this.getRelativePath(w.path),
       commitHash: w.commitHash,
       isMainRepo: w.isMainRepo,
       isLocked: w.isLocked,
@@ -116,10 +119,11 @@ export class ListDisplay {
     }
 
     for (const worktree of worktrees) {
+      const relativePath = this.getRelativePath(worktree.path);
       if (worktree.isMainRepo) {
-        this.logger.info(chalk.cyan('(main)') + ` - ${worktree.path}`);
+        this.logger.info(chalk.cyan('(main)') + ` - ${relativePath}`);
       } else {
-        this.logger.info(chalk.cyan(worktree.branchName) + ` - ${worktree.path}`);
+        this.logger.info(chalk.cyan(worktree.branchName) + ` - ${relativePath}`);
       }
     }
   }
@@ -257,5 +261,12 @@ export class ListDisplay {
     }
 
     return str.substring(0, maxLength - 3) + '...';
+  }
+
+  /**
+   * Get relative path from current directory
+   */
+  private getRelativePath(absolutePath: string): string {
+    return path.relative(process.cwd(), absolutePath);
   }
 }
