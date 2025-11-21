@@ -380,11 +380,17 @@ export class CreateCommand {
     }
 
     const workspaceParent = path.join(this.paths.repoRoot, '..', this.config.type);
-    const workspacePath = path.join(workspaceParent, this.config.name);
 
-    // Create branch name based on ticket ID presence
+    // Folder name includes ticket ID if present
+    const folderName = this.config.ticketId
+      ? `${this.config.ticketId}-${this.config.name}`
+      : this.config.name;
+
+    const workspacePath = path.join(workspaceParent, folderName);
+
+    // Branch name always uses type/ prefix, with ticket ID after type
     const branchName = this.config.ticketId
-      ? `${this.config.ticketId}-${this.config.type}-${this.config.name}`
+      ? `${this.config.type}/${this.config.ticketId}-${this.config.name}`
       : `${this.config.type}/${this.config.name}`;
 
     this.paths = {
