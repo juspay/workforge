@@ -404,6 +404,8 @@ Creates new Git worktrees with environment setup.
 3. Detect default branch
 4. Detect repository type (public vs internal)
 5. Calculate paths and branch names
+   - With Jira ticket: branch `type/TICKET-name`, folder `type/TICKET-name`
+   - Without ticket: branch `type/name`, folder `type/name`
 6. Run preflight checks
 7. Show existing worktrees (configurable)
 8. Confirm creation
@@ -485,8 +487,9 @@ Lists all worktrees with status indicators.
 **Workflow:**
 1. Parse git worktree list --porcelain
 2. Extract worktree information
-3. Sort by specified criteria
-4. Format output (table, JSON, or simple)
+3. Calculate relative paths from current directory
+4. Sort by specified criteria
+5. Format output (table, JSON, or simple)
 
 **Options:**
 - `--json`: JSON format
@@ -497,6 +500,11 @@ Lists all worktrees with status indicators.
 - **Table**: Formatted table with columns
 - **JSON**: Machine-readable array
 - **Simple**: One line per worktree
+
+**Output Features:**
+- **Relative Paths**: Shows paths relative to current directory (e.g., `../feat/my-feature`)
+- **Copy-Paste Ready**: Can directly use `cd <path>` from output
+- **JSON Format**: Includes both absolute and relative paths
 
 **Status Indicators:**
 - **MAIN**: Main repository
