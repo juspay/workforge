@@ -1,6 +1,6 @@
 {
   "name": "workforge",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "description": "Smart Git workspace manager with automatic environment setup, Jira integration, and intelligent package management",
   "main": "dist/index.js",

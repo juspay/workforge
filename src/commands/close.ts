@@ -118,12 +118,12 @@ export class CloseCommand {
         this.logger.newline();
         this.logger.step(2, 5, 'Checking environment variable changes...');
 
-        // Generate diff
-        const diff = this.envDiffer.compare(mainEnvPath, worktreeEnvPath, {
-          sourceLabel: `Main (${path.basename(mainRepo)})`,
-          targetLabel: `Worktree (${worktree.branchName})`,
-          sourcePath: mainEnvPath,
-          targetPath: worktreeEnvPath
+        // Generate diff (worktree → main: sync new env vars back to main on close)
+        const diff = this.envDiffer.compare(worktreeEnvPath, mainEnvPath, {
+          sourceLabel: `Worktree (${worktree.branchName})`,
+          targetLabel: `Main (${path.basename(mainRepo)})`,
+          sourcePath: worktreeEnvPath,
+          targetPath: mainEnvPath
         });
 
         const summary = this.envDiffer.getSummary(diff);
@@ -166,7 +166,7 @@ export class CloseCommand {
 
               // Perform sync
               const syncProgress = this.logger.startProgress('Syncing environment variables...');
-              const syncResult = await this.envSyncer.sync(mainEnvPath, worktreeEnvPath, diff, decision);
+              const syncResult = await this.envSyncer.sync(worktreeEnvPath, mainEnvPath, diff, decision);
 
               if (syncResult.success) {
                 syncProgress?.succeed('Environment variables synced successfully');
