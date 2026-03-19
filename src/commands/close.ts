@@ -150,7 +150,7 @@ export class CloseCommand {
               confirmed = await this.syncPrompt.confirmSync(decision);
             }
 
-            if (confirmed) {
+            if (confirmed && !this.options.dryRun) {
               // Create backup if enabled
               const config = this.configManager.load();
               if (config.sync.createBackupBeforeSync) {
@@ -185,7 +185,7 @@ export class CloseCommand {
                 this.logger.error('Environment sync failed. Aborting worktree closure.');
                 process.exit(1);
               }
-            } else {
+            } else if (!confirmed) {
               this.logger.warning('Sync cancelled. Continuing with worktree closure...');
             }
           } else {
