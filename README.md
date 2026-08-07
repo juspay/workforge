@@ -104,7 +104,7 @@ workforge create -t doc -n api-guide -y
 **Options:**
 - `-t, --type`: Branch type (feat, fix, doc, etc.) - **Required**
 - `-n, --name`: Feature/branch name (kebab-case) - **Required**
-- `-b, --base`: Base branch to checkout from (default: main)
+- `-b, --base`: Base branch to fork from (default: auto-detected primary branch). Accepts a branch that exists only on the remote, a tag, or a commit SHA.
 - `-j, --ticket`: Jira ticket ID (format: BZ-12345)
 - `-y, --yes`: Skip confirmations
 
@@ -488,14 +488,38 @@ your-repo/
 
 **Note**: Folder structure remains `../type/name` regardless of ticket ID. Only branch names include ticket IDs.
 
-## Default Branch Detection
+## Base Branch Resolution
 
-The tool intelligently detects your repository's default branch:
+### Always forks from the remote
 
-1. **Remote Default**: Checks `git symbolic-ref refs/remotes/origin/HEAD`
-2. **Common Branches**: Tries `main`, `master`, `develop`, `beta`
-3. **Current Branch**: Falls back to current checked-out branch
-4. **Override**: Use `-b` flag to specify manually
+`create` fetches before it does anything else, then branches from
+`<remote>/<base>` whenever the base exists on the remote. `git fetch` only
+advances `refs/remotes/*` — it never moves your local branches — so branching
+from a local branch name forks from whatever commit that branch was left at,
+which in a worktree workflow is usually well behind the remote.
+
+If the base has no remote counterpart, WorkForge falls back to the local branch
+and says so. If the remote is unreachable, it warns and continues with the refs
+already on disk.
+
+### Which branch is the primary one
+
+Probed in order, falling through on any failure:
+
+1. **Cached remote HEAD**: `refs/remotes/<remote>/HEAD` (refreshed after each successful fetch, so a renamed default branch is picked up)
+2. **Live query**: `git ls-remote --symref <remote> HEAD`, then cached locally
+3. **Remote candidates**: `main`, `master`, `release`, `develop`, `trunk`, `beta`, `dev`, `stable` against `refs/remotes/<remote>/*`
+4. **Local candidates**: the same names against `refs/heads/*`
+5. **Current branch**: whatever the main repository has checked out
+
+### Precedence
+
+1. `-b/--base`, when passed — never overridden by detection
+2. The auto-detected primary branch
+3. `preferences.defaultBaseBranch` (used directly when `preferences.autoDetectBaseBranch` is `false`, otherwise only as a last resort)
+
+The new branch is created with `--no-track`, so it does not inherit the base
+branch as its upstream.
 
 ## Examples
 
@@ -752,7 +776,8 @@ git worktree list
 git branch -a | grep "feat/feature-name"
 git branch -a | grep "BZ-12345"
 
-# 6. Verify base branch exists
+# 6. Verify base branch exists (remote first — that is what create uses)
+git show-ref --verify refs/remotes/origin/main
 git show-ref --verify refs/heads/main
 
 # 7. Check package manager files

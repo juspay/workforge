@@ -64,8 +64,9 @@ async function main(): Promise<void> {
           .option('base', {
             alias: 'b',
             type: 'string',
-            description: 'Base branch to checkout from (auto-detects main/master/develop/beta if not specified)',
-            default: 'main'
+            description:
+              'Base branch to fork from. Omit to auto-detect the repository primary branch from the remote. ' +
+              'Always forks from the remote tip (origin/<base>) when the branch exists on the remote.'
           })
           .option('ticket', {
             alias: 'j',
@@ -84,8 +85,8 @@ async function main(): Promise<void> {
             description: 'Skip confirmations',
             default: false
           })
-          .example('$0 create -t feat -n auth', 'Create feat/auth worktree')
-          .example('$0 create -t fix -n bug -b develop', 'Create from develop branch')
+          .example('$0 create -t feat -n auth', 'Create feat/auth from the detected primary branch')
+          .example('$0 create -t fix -n bug -b develop', 'Create from origin/develop')
           .example('$0 create -t feat -n api -b beta --yes', 'Create from beta branch')
           .example('$0 create -t feat -n api -j BZ-123', 'Create with Jira ticket')
           .example('$0 create -t feat -n auth -j BZ-456', 'Create feat/BZ-456-auth worktree')
@@ -95,7 +96,7 @@ async function main(): Promise<void> {
         const config: WorkspaceConfig = {
           type: argv.type as string,
           name: argv.name as string,
-          base: argv.base as string,
+          base: argv.base as string | undefined,
           yes: argv.yes as boolean,
           ticketId: argv.ticket as string | undefined
         };

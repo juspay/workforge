@@ -2,6 +2,7 @@ import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import * as path from 'path';
 import { WorktreeInfo, SafetyCheckResult } from '../types/index.js';
+import { BranchResolver } from './BranchResolver.js';
 
 /**
  * Safety Checker
@@ -70,20 +71,39 @@ export class SafetyChecker {
 
     // Only check remote status if we have a proper branch
     if (!result.isDetachedHead && worktree.branchName) {
+      // Refresh remote-tracking refs first. Every check below compares against
+      // `origin/*`, and in a worktree workflow those refs are routinely stale —
+      // which would report an already-merged branch as unmerged.
+      const resolver = new BranchResolver(worktree.path);
+      const remote = resolver.getRemoteName();
+      if (remote) {
+        resolver.fetch(remote);
+      }
+
       // Check for remote branch
       result.hasRemoteBranch = this.checkRemoteBranch(worktree.path, worktree.branchName);
 
       // Check for unpushed commits
       if (result.hasRemoteBranch) {
-        result.hasUnpushedCommits = this.checkUnpushedCommits(worktree.path, worktree.branchName);
-        if (result.hasUnpushedCommits) {
-          result.warnings.push('Branch has unpushed commits');
+        const unpushed = this.checkUnpushedCommits(worktree.path, worktree.branchName);
+        result.hasUnpushedCommits = unpushed.hasUnpushed;
+        if (unpushed.hasUnpushed) {
+          result.warnings.push(
+            unpushed.determined
+              ? 'Branch has unpushed commits'
+              : 'Could not determine whether the branch has unpushed commits — assuming it does'
+          );
         }
 
-        // Check if branch is merged
-        result.isMerged = this.checkBranchMerged(worktree.path, worktree.branchName);
-        if (!result.isMerged) {
-          result.warnings.push('Branch has not been merged into main/master');
+        // Check if branch is merged into the repository's primary branch
+        const merge = this.checkBranchMerged(worktree, worktree.branchName, resolver, remote);
+        result.isMerged = merge.isMerged;
+        if (!merge.isMerged) {
+          result.warnings.push(
+            merge.baseBranch
+              ? `Branch has not been merged into ${merge.baseBranch}`
+              : 'Could not determine the primary branch to check merge status against'
+          );
         }
       } else {
         result.warnings.push('Branch does not have a remote tracking branch');
@@ -115,70 +135,105 @@ export class SafetyChecker {
   }
 
   /**
-   * Check for unpushed commits
+   * Check for unpushed commits.
+   *
+   * The comparison needs `refs/remotes/origin/<branch>` locally. A repository
+   * that has never fetched that branch cannot answer the question, and
+   * reporting "nothing unpushed" there would silently green-light discarding
+   * commits — so an indeterminate result is reported as unpushed instead.
    *
    * @param worktreePath - Path to worktree
    * @param branchName - Branch name
-   * @returns True if there are unpushed commits
    */
-  private checkUnpushedCommits(worktreePath: string, branchName: string): boolean {
-    // Get commits ahead of remote
-    const result = spawnSync(
-      'git',
-      ['rev-list', '--count', `origin/${branchName}..${branchName}`],
-      {
+  private checkUnpushedCommits(
+    worktreePath: string,
+    branchName: string
+  ): { hasUnpushed: boolean; determined: boolean } {
+    const count = (): number | null => {
+      const result = spawnSync(
+        'git',
+        ['rev-list', '--count', `origin/${branchName}..${branchName}`],
+        { cwd: worktreePath, encoding: 'utf8', stdio: 'pipe' }
+      );
+
+      if (result.status !== 0) {
+        return null;
+      }
+
+      const parsed = parseInt(result.stdout.trim(), 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    let ahead = count();
+
+    if (ahead === null) {
+      // The remote-tracking ref is missing locally. Fetch just this branch and
+      // retry before giving up.
+      spawnSync('git', ['fetch', 'origin', branchName], {
         cwd: worktreePath,
         encoding: 'utf8',
-        stdio: 'pipe'
-      }
-    );
-
-    if (result.status !== 0) {
-      // Assume no unpushed commits if command fails
-      return false;
+        stdio: 'pipe',
+        timeout: 20_000
+      });
+      ahead = count();
     }
 
-    const count = parseInt(result.stdout.trim(), 10);
-    return count > 0;
+    if (ahead === null) {
+      return { hasUnpushed: true, determined: false };
+    }
+
+    return { hasUnpushed: ahead > 0, determined: true };
   }
 
   /**
-   * Check if branch is merged into main/master
+   * Check whether the branch is merged into the repository's primary branch.
    *
-   * @param worktreePath - Path to worktree
+   * Compares against the remote-tracking ref (`origin/<primary>`) rather than
+   * the local branch: in a worktree-based workflow the local primary branch is
+   * rarely pulled, so it is usually behind and would report merged branches as
+   * unmerged.
+   *
+   * @param worktree - Worktree information
    * @param branchName - Branch name
-   * @returns True if branch is merged
    */
-  private checkBranchMerged(worktreePath: string, branchName: string): boolean {
-    // Check against main first
-    let result = spawnSync('git', ['branch', '--merged', 'main'], {
-      cwd: worktreePath,
+  private checkBranchMerged(
+    worktree: WorktreeInfo,
+    branchName: string,
+    resolver: BranchResolver,
+    remote: string | null
+  ): { isMerged: boolean; baseBranch: string | null } {
+    const primary = resolver.detectPrimaryBranch(remote);
+
+    if (!primary) {
+      return { isMerged: false, baseBranch: null };
+    }
+
+    // Prefer the remote tip; fall back to the local branch when there is no
+    // remote counterpart.
+    const startPoint = resolver.resolveStartPoint(primary.branch, remote);
+    const base = startPoint.startPoint;
+
+    if (!base) {
+      return { isMerged: false, baseBranch: primary.branch };
+    }
+
+    // `--merged <base>` lists branches whose tip is an ancestor of <base>.
+    const result = spawnSync('git', ['branch', '--merged', base, '--format=%(refname:short)'], {
+      cwd: worktree.path,
       encoding: 'utf8',
       stdio: 'pipe'
     });
 
-    if (result.status === 0) {
-      const mergedBranches = result.stdout;
-      if (mergedBranches.includes(branchName)) {
-        return true;
-      }
+    if (result.status !== 0) {
+      return { isMerged: false, baseBranch: base };
     }
 
-    // Check against master as fallback
-    result = spawnSync('git', ['branch', '--merged', 'master'], {
-      cwd: worktreePath,
-      encoding: 'utf8',
-      stdio: 'pipe'
-    });
+    const merged = result.stdout
+      .split('\n')
+      .map(line => line.trim().replace(/^\*\s*/, ''))
+      .filter(line => line.length > 0);
 
-    if (result.status === 0) {
-      const mergedBranches = result.stdout;
-      if (mergedBranches.includes(branchName)) {
-        return true;
-      }
-    }
-
-    return false;
+    return { isMerged: merged.includes(branchName), baseBranch: base };
   }
 
   /**

@@ -38,7 +38,7 @@ export class BranchCleaner {
     }
 
     // Determine delete strategy based on safety checks
-    const strategy = this.getDeletionStrategy(safety, force);
+    const strategy = this.getDeletionStrategy(force);
 
     // Add warnings about remote branch
     if (safety.hasRemoteBranch) {
@@ -171,25 +171,18 @@ export class BranchCleaner {
   }
 
   /**
-   * Get deletion strategy based on safety checks
+   * Get deletion strategy.
    *
-   * @param safety - Safety check result
+   * Force delete only when the user explicitly asked for it. An unmerged
+   * branch is deleted with `-d`, so Git refuses and the caller reports
+   * "not fully merged — use --force"; escalating to `-D` automatically would
+   * discard the user's commits without their consent.
+   *
    * @param force - Force flag from user
    * @returns Deletion strategy
    */
-  private getDeletionStrategy(safety: SafetyCheckResult, force: boolean): 'safe' | 'force' {
-    // If user explicitly requested force, use force
-    if (force) {
-      return 'force';
-    }
-
-    // If branch is merged, use safe delete
-    if (safety.isMerged) {
-      return 'safe';
-    }
-
-    // If branch is not merged, require force
-    return 'force';
+  private getDeletionStrategy(force: boolean): 'safe' | 'force' {
+    return force ? 'force' : 'safe';
   }
 
   /**
