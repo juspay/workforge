@@ -21,6 +21,7 @@ The configuration file is created automatically on first use with sensible defau
   "version": "3.0.0",
   "preferences": {
     "defaultBaseBranch": "main",
+    "autoDetectBaseBranch": true,
     "autoDeleteBranch": false,
     "skipConfirmations": false,
     "packageManager": "auto",
@@ -59,11 +60,21 @@ Controls general WorkForge behavior.
 #### `defaultBaseBranch`
 - **Type:** `string`
 - **Default:** `"main"`
-- **Description:** Default base branch when creating new worktrees
+- **Description:** Base branch used when `autoDetectBaseBranch` is `false`. When auto-detection is on (the default), this is only a last-resort fallback for repositories where no primary branch can be determined at all.
 
 **Example:**
 ```json
 "defaultBaseBranch": "develop"
+```
+
+#### `autoDetectBaseBranch`
+- **Type:** `boolean`
+- **Default:** `true`
+- **Description:** Detect the repository's primary branch from the remote when `-b/--base` is not passed. Set to `false` to always use `defaultBaseBranch` instead. An explicit `-b/--base` always wins over both.
+
+**Example:**
+```json
+"autoDetectBaseBranch": false
 ```
 
 #### `autoDeleteBranch`

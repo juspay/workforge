@@ -49,6 +49,7 @@ src/
 │   ├── ProjectIdentifier.ts   # Project ID generation
 │   ├── EnvFileParser.ts        # .env parsing
 │   ├── WorktreeResolver.ts     # Worktree discovery
+│   ├── BranchResolver.ts       # Remote-aware branch resolution
 │   ├── EnvDiffer.ts            # Environment diff
 │   ├── EnvSyncer.ts            # Environment sync
 │   ├── BackupManager.ts        # Backup management
@@ -190,6 +191,42 @@ const wt = resolver.resolve(); // From current directory
 
 ---
 
+### 4b. BranchResolver (src/core/BranchResolver.ts)
+
+Treats the remote as the source of truth for branches; the local branch is a
+possibly-stale cache. Used by `create` and by `SafetyChecker`.
+
+**Key Methods:**
+- `getRemoteName()` - Prefers `origin`, else the first remote, else `null`
+- `fetch(remote)` - `git fetch <remote> --prune`; never throws, reports `{ ok, error }`
+- `refreshRemoteHead(remote)` - Re-reads and caches `<remote>/HEAD` (`git fetch` never updates it, so a renamed default branch would otherwise stick forever)
+- `detectPrimaryBranch(remote)` - Five-rung ladder, see below
+- `resolveStartPoint(base, remote)` - What to actually branch from
+- `listLocalBranches()` / `listRemoteBranches(remote)` - For error messages
+- `describeCommit(revision)` - Short SHA, for reporting
+
+**Primary branch ladder** (falls through on every failure):
+1. `refs/remotes/<remote>/HEAD`
+2. `git ls-remote --symref <remote> HEAD`, then cached
+3. `main`, `master`, `release`, `develop`, `trunk`, `beta`, `dev`, `stable` against `refs/remotes/<remote>/*`
+4. The same candidates against `refs/heads/*`
+5. The currently checked-out branch
+
+**Start point resolution:**
+| Condition | Start point | `source` |
+|---|---|---|
+| `refs/remotes/<remote>/<base>` exists | `<remote>/<base>` | `remote` |
+| only `refs/heads/<base>` exists | `<base>` (warns: may be stale) | `local` |
+| resolves as a tag or commit | as given | `committish` |
+| nothing matches | `null` → actionable error | `missing` |
+
+**Why:** `git fetch` advances only `refs/remotes/*`. Branching from a local
+branch name forks from wherever that branch was last left — commonly many
+commits behind the remote, because worktree users rarely check out or pull the
+primary branch in the main clone.
+
+---
+
 ### 5. EnvDiffer (src/core/EnvDiffer.ts)
 
 Compares .env files and generates structured diffs.
@@ -266,10 +303,13 @@ Validates worktree state before closing.
 
 **Safety Checks:**
 1. **Uncommitted Changes**: Detects modified, staged, or untracked files
-2. **Unpushed Commits**: Detects commits not pushed to remote
-3. **Merge Status**: Checks if branch is merged into main
+2. **Unpushed Commits**: Detects commits not pushed to remote. Indeterminate results (the remote-tracking ref is missing even after a targeted fetch) are reported as *unpushed*, never as clean
+3. **Merge Status**: Checks the branch against `<remote>/<primary>`, where the primary branch comes from `BranchResolver` — not a hardcoded `main`/`master`, and not the local branch, which is normally stale in a worktree workflow
 4. **Detached HEAD**: Detects detached HEAD state
 5. **Merge/Rebase in Progress**: Detects ongoing merge or rebase
+
+Refs are refreshed with a best-effort `git fetch` before any of the remote
+comparisons run.
 
 **Check Result:**
 ```typescript
@@ -400,19 +440,24 @@ Creates new Git worktrees with environment setup.
 1. Validate inputs (type, name, ticket ID)
    - Auto-convert name to kebab-case using toKebabCase()
    - Log conversion if name changed
-2. Discover repository (works from worktrees too)
-3. Detect default branch
-4. Detect repository type (public vs internal)
-5. Calculate paths and branch names
+2. Discover repository (via `git worktree list`, so it works from worktrees too)
+3. Sync with remote — `git fetch <remote> --prune`, then refresh `<remote>/HEAD`.
+   Runs *before* branch detection and preflight so both read fresh refs.
+   Best effort: a missing or unreachable remote warns and continues.
+4. Resolve base branch (see BranchResolver) — explicit `-b` > auto-detected
+   primary > `preferences.defaultBaseBranch`; resolves to `<remote>/<base>`
+   when the base exists on the remote
+5. Detect repository type (public vs internal)
+6. Calculate paths and branch names
    - With Jira ticket: branch `type/TICKET-name`, folder `type/TICKET-name`
    - Without ticket: branch `type/name`, folder `type/name`
-6. Run preflight checks
-7. Show existing worktrees (configurable)
-8. Confirm creation
-9. Create Git worktree
-10. Copy environment files
-11. Install dependencies (auto-detect package manager)
-12. Update project metadata
+7. Run preflight checks (branch collisions checked against fresh remote refs)
+8. Show existing worktrees (configurable)
+9. Confirm creation
+10. Create Git worktree — `git worktree add -b <branch> --no-track <path> <startPoint>`
+11. Copy environment files ┐
+12. Install dependencies   ├ each isolated: a failure is recorded as a warning
+13. Update project metadata┘ and the remaining steps still run
 
 **Options:**
 - `-t, --type`: Branch type (required)

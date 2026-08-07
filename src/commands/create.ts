@@ -2,10 +2,11 @@ import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, copyFileSync, mkdirSync, readFileSync } from 'fs';
 import * as path from 'path';
 import chalk from 'chalk';
-import { WorkspaceConfig, PathConfig, WorktreeInfo, ErrorLike } from '../types/index.js';
+import { WorkspaceConfig, PathConfig, WorktreeInfo, ErrorLike, BranchStartPoint } from '../types/index.js';
 import { ConfigManager } from '../core/ConfigManager.js';
 import { ProjectIdentifier } from '../core/ProjectIdentifier.js';
 import { WorktreeResolver } from '../core/WorktreeResolver.js';
+import { BranchResolver } from '../core/BranchResolver.js';
 import { toError } from '../utils/errors.js';
 import { toKebabCase } from '../utils/strings.js';
 
@@ -21,16 +22,21 @@ export class CreateCommand {
   private configManager: ConfigManager;
   private worktreeResolver: WorktreeResolver;
 
+  /** True when the user passed --base explicitly; suppresses auto-detection. */
+  private readonly baseWasExplicit: boolean;
+
+  private branchResolver: BranchResolver | null = null;
+  private remote: string | null = null;
+  private startPoint: BranchStartPoint | null = null;
+
+  /** Non-fatal problems collected during the run, surfaced in the summary. */
+  private warnings: string[] = [];
+
   constructor(config: WorkspaceConfig) {
     this.config = config;
     this.configManager = new ConfigManager();
     this.worktreeResolver = new WorktreeResolver();
-
-    // Apply defaults from configuration
-    const globalConfig = this.configManager.load();
-    if (this.config.base === 'main' && globalConfig.preferences.defaultBaseBranch !== 'main') {
-      this.config.base = globalConfig.preferences.defaultBaseBranch;
-    }
+    this.baseWasExplicit = typeof config.base === 'string' && config.base.length > 0;
   }
 
   public async run(): Promise<void> {
@@ -39,7 +45,8 @@ export class CreateCommand {
 
       await this.validateInputs();
       await this.discoverRepository();
-      await this.detectDefaultBranch();
+      await this.syncWithRemote();
+      await this.resolveBaseBranch();
       await this.detectRepositoryType();
       await this.showExistingWorktrees();
       await this.calculatePaths();
@@ -50,15 +57,32 @@ export class CreateCommand {
       }
 
       await this.createWorkspace();
-      await this.copyEnvironmentFiles();
-      await this.installDependencies();
-      await this.updateProjectMetadata();
+
+      // Post-creation steps are independent: the worktree already exists, so a
+      // failure in any one of them must not abandon the rest.
+      await this.runIndependently('Copy environment files', () => this.copyEnvironmentFiles());
+      await this.runIndependently('Install dependencies', () => this.installDependencies());
+      await this.runIndependently('Update project metadata', () => this.updateProjectMetadata());
 
       this.logSuccess();
       process.exit(0);
     } catch (error) {
       this.handleError(toError(error));
       process.exit(1);
+    }
+  }
+
+  /**
+   * Run a post-creation step, recording rather than propagating its failure.
+   */
+  private async runIndependently(label: string, step: () => Promise<void>): Promise<void> {
+    try {
+      await step();
+    } catch (error) {
+      const message = toError(error).message;
+      this.warnings.push(`${label} failed: ${message}`);
+      this.log('warn', `⚠️  ${label} failed: ${message}`);
+      this.log('info', '   Continuing with the remaining steps...');
     }
   }
 
@@ -98,6 +122,34 @@ export class CreateCommand {
   private discoverRepository(): void {
     this.log('info', 'Discovering Git repository root...');
 
+    // `git worktree list` always reports the main worktree first, so it answers
+    // "which directory is the main repository" correctly whether we are run
+    // from the main repo, from a linked worktree, or from a nested subdirectory.
+    const listed = spawnSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: process.cwd(),
+      stdio: 'pipe',
+      encoding: 'utf8'
+    });
+
+    if (listed.status === 0 && listed.stdout) {
+      const match = listed.stdout.match(/^worktree (.+)$/m);
+      if (match) {
+        const mainRepoPath = path.resolve(match[1].trim());
+        if (existsSync(mainRepoPath)) {
+          const isCurrent = path.resolve(process.cwd()) === mainRepoPath;
+          this.paths = { ...this.paths, repoRoot: mainRepoPath } as PathConfig;
+          this.log(
+            'success',
+            isCurrent
+              ? `✅ Found repository root at: ${mainRepoPath}`
+              : `✅ Found main repository at: ${mainRepoPath}`
+          );
+          return;
+        }
+      }
+    }
+
+    // Fallback for git versions or states where `worktree list` is unavailable.
     let currentDir = process.cwd();
 
     while (currentDir !== path.dirname(currentDir)) {
@@ -105,15 +157,17 @@ export class CreateCommand {
 
       if (existsSync(gitPath)) {
         // Check if it's a worktree or main repo
-        const isWorktree = existsSync(gitPath) && !existsSync(path.join(gitPath, 'objects'));
+        const isWorktree = !existsSync(path.join(gitPath, 'objects'));
 
         if (isWorktree) {
-          // Read .git file to find main repo
+          // Read .git file to find main repo. It contains
+          // `gitdir: <main>/.git/worktrees/<name>`, so the main repository is
+          // three levels up: <name> -> worktrees -> .git -> <main>
           const gitFile = readFileSync(gitPath, 'utf8').trim();
           const match = gitFile.match(/^gitdir: (.+)$/);
           if (match) {
             const gitDir = path.resolve(currentDir, match[1]);
-            const mainRepoPath = path.dirname(path.dirname(gitDir));
+            const mainRepoPath = path.dirname(path.dirname(path.dirname(gitDir)));
             if (existsSync(mainRepoPath)) {
               this.paths = { ...this.paths, repoRoot: mainRepoPath } as PathConfig;
               this.log('success', `✅ Found main repository at: ${mainRepoPath}`);
@@ -134,82 +188,125 @@ export class CreateCommand {
     throw new Error('Not inside a Git repository. Please run this command from within a Git repository.');
   }
 
-  private async detectDefaultBranch(): Promise<void> {
+  /**
+   * Refresh remote-tracking refs before anything reads them.
+   *
+   * This runs *before* base-branch detection and pre-flight checks so every
+   * later decision is made against the current state of the remote rather than
+   * whatever the local clone last saw.
+   */
+  private syncWithRemote(): void {
     if (!this.paths?.repoRoot) {
       throw new Error('Repository root not found');
     }
 
-    // If user didn't specify a base branch, try to detect the default
-    const globalConfig = this.configManager.load();
-    if (this.config.base === globalConfig.preferences.defaultBaseBranch) {
-      this.log('info', 'Detecting default branch...');
+    this.branchResolver = new BranchResolver(this.paths.repoRoot);
+    this.remote = this.branchResolver.getRemoteName();
 
-      try {
-        // Try to get the default branch from remote
-        const result = spawnSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], {
-          cwd: this.paths.repoRoot,
-          stdio: 'pipe',
-          encoding: 'utf8'
-        });
-
-        if (result.stdout && result.stdout.trim()) {
-          const defaultBranch = result.stdout.trim().replace('refs/remotes/origin/', '');
-          this.config.base = defaultBranch;
-          this.log('success', `✅ Detected default branch: ${defaultBranch}`);
-          return;
-        }
-      } catch (error) {
-        // Ignore error and try next method
-      }
-
-      // Fallback: check if main exists, otherwise try common alternatives
-      this.log('info', 'Scanning for available branches...');
-      const commonBranches = ['main', 'master', 'develop', 'beta'];
-      const foundBranches: string[] = [];
-
-      for (const branch of commonBranches) {
-        try {
-          const result = spawnSync('git', ['show-ref', '--verify', `refs/heads/${branch}`], {
-            cwd: this.paths.repoRoot,
-            stdio: 'pipe'
-          });
-
-          if (result.status === 0) {
-            foundBranches.push(branch);
-          }
-        } catch (error) {
-          // Continue to next branch
-        }
-      }
-
-      if (foundBranches.length > 0) {
-        this.config.base = foundBranches[0];
-        this.log('success', `✅ Using base branch: ${this.config.base}`);
-
-        if (foundBranches.length > 1) {
-          this.log('info', `💡 Other available branches: ${foundBranches.slice(1).join(', ')}`);
-          this.log('info', `   Use --base <branch> to choose a different base`);
-        }
-        return;
-      }
-
-      // If no common branch found, get current branch
-      try {
-        const result = spawnSync('git', ['branch', '--show-current'], {
-          cwd: this.paths.repoRoot,
-          stdio: 'pipe',
-          encoding: 'utf8'
-        });
-
-        if (result.stdout && result.stdout.trim()) {
-          this.config.base = result.stdout.trim();
-          this.log('success', `✅ Using current branch as base: ${this.config.base}`);
-          return;
-        }
-      } catch (error) {
-        // Continue with default
-      }
+    if (!this.remote) {
+      this.log('warn', '⚠️  No Git remote configured — falling back to local branches');
+      this.warnings.push('No Git remote configured; the worktree was based on a local branch');
+      return;
     }
+
+    this.log('info', `Fetching latest refs from "${this.remote}"...`);
+    const result = this.branchResolver.fetch(this.remote);
+
+    if (result.ok) {
+      this.log('success', `✅ Fetched latest refs from "${this.remote}"`);
+      // `fetch` never updates <remote>/HEAD, so a repository cloned before the
+      // remote renamed its default branch would keep resolving to the retired
+      // one. Refresh it now, while the network is known to be reachable.
+      this.branchResolver.refreshRemoteHead(this.remote);
+      return;
+    }
+
+    this.log('warn', `⚠️  Failed to fetch from "${this.remote}": ${result.error}`);
+    this.log('info', '   Continuing with the refs already available locally (they may be stale)');
+    this.warnings.push(`Could not fetch from "${this.remote}"; remote refs may be stale`);
+  }
+
+  /**
+   * Determine which branch to fork from, and which revision that branch is at.
+   *
+   * Precedence:
+   *   1. --base passed explicitly
+   *   2. auto-detected primary branch (unless disabled in config)
+   *   3. preferences.defaultBaseBranch
+   */
+  private resolveBaseBranch(): void {
+    if (!this.paths?.repoRoot || !this.branchResolver) {
+      throw new Error('Repository root not found');
+    }
+
+    const globalConfig = this.configManager.load();
+
+    if (this.baseWasExplicit) {
+      this.log('info', `Using base branch from --base: ${this.config.base}`);
+    } else if (globalConfig.preferences.autoDetectBaseBranch) {
+      this.log('info', 'Detecting primary branch...');
+      const detected = this.branchResolver.detectPrimaryBranch(this.remote);
+
+      if (detected) {
+        this.config.base = detected.branch;
+        this.log('success', `✅ Detected primary branch: ${detected.branch} (via ${detected.source})`);
+      } else {
+        this.config.base = globalConfig.preferences.defaultBaseBranch;
+        this.log('warn', `⚠️  Could not detect primary branch, using configured default: ${this.config.base}`);
+      }
+    } else {
+      this.config.base = globalConfig.preferences.defaultBaseBranch;
+      this.log('info', `Auto-detection disabled, using configured default: ${this.config.base}`);
+    }
+
+    const base = this.config.base;
+    if (!base) {
+      throw new Error('Could not determine a base branch. Use --base <branch> to specify one.');
+    }
+
+    this.startPoint = this.branchResolver.resolveStartPoint(base, this.remote);
+    this.config.base = this.startPoint.base;
+
+    if (this.startPoint.source === 'missing') {
+      throw new Error(this.formatMissingBaseError(this.startPoint.base));
+    }
+
+    if (this.startPoint.source === 'local' && this.startPoint.isStale) {
+      this.log('warn', `⚠️  "${base}" has no counterpart on "${this.remote}" — branching from the local branch`);
+      this.warnings.push(`Base "${base}" only exists locally; the worktree may not reflect the remote`);
+    }
+
+    if (this.startPoint.source === 'committish') {
+      this.log('info', `Base "${base}" is not a branch — treating it as a commit-ish`);
+    }
+
+    const startPoint = this.startPoint.startPoint;
+    const commit = startPoint ? this.branchResolver.describeCommit(startPoint) : null;
+    this.log(
+      'success',
+      `✅ Branching from ${startPoint}${commit ? ` (${commit})` : ''}`
+    );
+  }
+
+  /**
+   * Build an actionable error listing every branch the user could have meant.
+   */
+  private formatMissingBaseError(base: string): string {
+    const local = this.branchResolver?.listLocalBranches() ?? [];
+    const remoteBranches =
+      this.remote && this.branchResolver ? this.branchResolver.listRemoteBranches(this.remote) : [];
+
+    const lines = [`Base branch "${base}" not found locally or on the remote.`];
+
+    if (remoteBranches.length > 0) {
+      lines.push(`  Remote branches (${this.remote}): ${remoteBranches.join(', ')}`);
+    }
+    if (local.length > 0) {
+      lines.push(`  Local branches: ${local.join(', ')}`);
+    }
+    lines.push('  Use --base <branch> to specify a different base.');
+
+    return lines.join('\n');
   }
 
   private async detectRepositoryType(): Promise<void> {
@@ -307,36 +404,6 @@ export class CreateCommand {
     }
   }
 
-  /**
-   * Get list of all local branches in repository
-   * @returns Array of branch names, or empty array if error
-   */
-  private listAllBranches(): string[] {
-    if (!this.paths?.repoRoot) {
-      return [];
-    }
-
-    try {
-      const result = spawnSync('git', ['branch', '--format=%(refname:short)'], {
-        cwd: this.paths.repoRoot,
-        encoding: 'utf8',
-        stdio: 'pipe'
-      });
-
-      if (result.stdout) {
-        return result.stdout
-          .trim()
-          .split('\n')
-          .map(b => b.trim())
-          .filter(b => b.length > 0);
-      }
-    } catch {
-      // Ignore errors, return empty array
-    }
-
-    return [];
-  }
-
   private async promptForTicketId(): Promise<void> {
     // If ticket ID already provided via command line, use it
     if (this.config.ticketId) {
@@ -421,63 +488,34 @@ export class CreateCommand {
       throw new Error('Paths not calculated');
     }
 
-    // Validate base branch exists
+    if (!this.branchResolver || !this.startPoint?.startPoint) {
+      throw new Error('Base branch not resolved');
+    }
+
+    // The base branch was already resolved against the remote in
+    // resolveBaseBranch(); re-verify the start point still points at a commit.
     this.log('info', 'Validating base branch...');
-    try {
-      const result = spawnSync('git', ['show-ref', '--verify', `refs/heads/${this.config.base}`], {
-        cwd: this.paths.repoRoot,
-        stdio: 'pipe'
-      });
+    if (!this.branchResolver.describeCommit(this.startPoint.startPoint)) {
+      throw new Error(this.formatMissingBaseError(this.startPoint.base));
+    }
+    this.log('success', `✅ Base "${this.startPoint.startPoint}" is valid`);
 
-      if (result.status !== 0) {
-        const available = this.listAllBranches();
-        throw new Error(
-          `Base branch "${this.config.base}" not found.\n` +
-          `  Available branches: ${available.join(', ')}\n` +
-          `  Use --base <branch> to specify a different base.`
-        );
-      }
-
-      this.log('success', `✅ Base branch "${this.config.base}" exists`);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('not found')) {
-        throw error;
-      }
-      // Other errors are non-fatal, continue
+    // Check if branch already exists locally
+    if (this.branchResolver.localBranchExists(this.paths.branchName)) {
+      throw new Error(
+        `Branch "${this.paths.branchName}" already exists locally.\n` +
+        `  Check it out directly, or choose a different --name.`
+      );
     }
 
-    // Check if branch already exists
-    try {
-      const result = spawnSync('git', ['branch', '--list', this.paths.branchName], {
-        cwd: this.paths.repoRoot,
-        stdio: 'pipe',
-        encoding: 'utf8'
-      });
-
-      if (result.stdout && result.stdout.trim()) {
-        throw new Error(`Branch "${this.paths.branchName}" already exists locally`);
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('already exists')) {
-        throw error;
-      }
-    }
-
-    // Check if remote branch exists
-    try {
-      const result = spawnSync('git', ['branch', '--list', '--remotes', `*/${this.paths.branchName}`], {
-        cwd: this.paths.repoRoot,
-        stdio: 'pipe',
-        encoding: 'utf8'
-      });
-
-      if (result.stdout && result.stdout.trim()) {
-        throw new Error(`Branch "${this.paths.branchName}" already exists on remote`);
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('already exists')) {
-        throw error;
-      }
+    // Check if branch already exists on the remote (refs are fresh: we fetched
+    // before pre-flight, so this reflects the remote's current state)
+    if (this.remote && this.branchResolver.remoteBranchExists(this.remote, this.paths.branchName)) {
+      throw new Error(
+        `Branch "${this.paths.branchName}" already exists on "${this.remote}".\n` +
+        `  Run: git worktree add ${this.paths.workspacePath} ${this.paths.branchName}\n` +
+        `  Or choose a different --name.`
+      );
     }
 
     // Check if workspace path already exists
@@ -498,7 +536,8 @@ export class CreateCommand {
     this.log('info', `About to create:
   Branch: ${this.paths.branchName}
   Workspace: ${this.paths.workspacePath}
-  Base: ${this.config.base}`);
+  Base: ${this.config.base}
+  Forking from: ${this.startPoint?.startPoint}`);
 
     const { confirm } = await inquirer.default.prompt([
       {
@@ -520,36 +559,37 @@ export class CreateCommand {
       throw new Error('Paths not calculated');
     }
 
+    const startPoint = this.startPoint?.startPoint;
+    if (!startPoint) {
+      throw new Error('Base branch not resolved');
+    }
+
     this.log('info', 'Creating Git workspace...');
 
     // Ensure parent directory exists
     mkdirSync(this.paths.workspaceParent, { recursive: true });
 
-    // Fetch latest changes
-    try {
-      execFileSync('git', ['fetch', '--prune'], {
-        cwd: this.paths.repoRoot,
-        stdio: 'pipe'
-      });
-    } catch (error) {
-      this.log('warn', 'Warning: Failed to fetch latest changes');
-    }
-
-    // Create worktree with new branch
+    // Branch from the resolved start point. When the base exists on the remote
+    // this is `<remote>/<base>`, so the worktree starts at the remote tip
+    // instead of a possibly-stale local branch.
+    //
+    // --no-track: the new branch is a feature branch, not a continuation of the
+    // base, so it must not inherit `<remote>/<base>` as its upstream.
     try {
       execFileSync('git', [
         'worktree',
         'add',
-        '-B',
+        '-b',
         this.paths.branchName,
+        '--no-track',
         this.paths.workspacePath,
-        this.config.base
+        startPoint
       ], {
         cwd: this.paths.repoRoot,
         stdio: 'inherit'
       });
     } catch (error) {
-      throw new Error(`Failed to create workspace: ${error}`);
+      throw new Error(`Failed to create workspace: ${toError(error).message}`);
     }
 
     this.log('success', '✅ Workspace created successfully');
@@ -667,17 +707,31 @@ export class CreateCommand {
   private logSuccess(): void {
     if (!this.paths) return;
 
+    const startPoint = this.startPoint?.startPoint ?? this.config.base;
+    const commit = this.startPoint?.startPoint
+      ? this.branchResolver?.describeCommit(this.startPoint.startPoint)
+      : null;
+
     this.log('success', `
 🎉 Workspace created successfully!
 
 📁 Workspace Path: ${this.paths.workspacePath}
 🌿 Branch Name: ${this.paths.branchName}
 🎯 Base Branch: ${this.config.base}
+📌 Forked From: ${startPoint}${commit ? ` (${commit})` : ''}
 
 Next steps:
   cd ${this.paths.workspacePath}
   # Start working on your feature/fix!
 `);
+
+    if (this.warnings.length > 0) {
+      console.log(chalk.yellow(`⚠️  Completed with ${this.warnings.length} warning(s):`));
+      for (const warning of this.warnings) {
+        console.log(chalk.yellow(`   • ${warning}`));
+      }
+      console.log('');
+    }
   }
 
   private log(level: 'info' | 'success' | 'warn' | 'error', message: string): void {

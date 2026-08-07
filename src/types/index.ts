@@ -15,9 +15,27 @@
 export type WorkspaceConfig = {
   type: string;              // Branch type (feat, fix, doc, etc.)
   name: string;              // Branch name (kebab-case)
-  base: string;              // Base branch to checkout from
+  base?: string;             // Base branch; undefined means "auto-detect"
   yes: boolean;              // Skip confirmations
   ticketId?: string;         // Optional Jira ticket ID
+};
+
+/**
+ * Outcome of primary-branch auto-detection
+ */
+export type PrimaryBranchDetection = {
+  branch: string;            // Detected primary branch name
+  source: string;            // How it was determined (for logging)
+};
+
+/**
+ * Where a new branch should fork from
+ */
+export type BranchStartPoint = {
+  base: string;              // Base branch name, unqualified
+  startPoint: string | null; // Git revision to branch from; null when unresolvable
+  source: 'remote' | 'local' | 'committish' | 'missing';
+  isStale: boolean;          // True when falling back to a local ref despite a remote
 };
 
 /**
@@ -282,6 +300,7 @@ export type Config = {
   version: string;
   preferences: {
     defaultBaseBranch: string;
+    autoDetectBaseBranch: boolean;
     autoDeleteBranch: boolean;
     skipConfirmations: boolean;
     packageManager: 'auto' | 'npm' | 'pnpm' | 'yarn';

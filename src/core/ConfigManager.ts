@@ -10,6 +10,7 @@ const DEFAULT_CONFIG: Config = {
   version: '3.0.0',
   preferences: {
     defaultBaseBranch: 'main',
+    autoDetectBaseBranch: true,
     autoDeleteBranch: false,
     skipConfirmations: false,
     packageManager: 'auto',
