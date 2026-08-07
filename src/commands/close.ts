@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { existsSync } from 'fs';
+import { existsSync, writeFileSync, unlinkSync } from 'fs';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { WorktreeResolver } from '../core/WorktreeResolver.js';
@@ -113,6 +113,24 @@ export class CloseCommand {
 
       let syncPerformed = false;
       let backupCreated = false;
+      let seededMainEnv = false;
+
+      // A worktree .env with no counterpart in main used to skip the sync
+      // entirely — and since .env is normally gitignored, removing the worktree
+      // destroyed every value in it. Seed an empty file so the standard diff and
+      // confirmation flow runs, presenting the variables as additions.
+      if (existsSync(worktreeEnvPath) && !existsSync(mainEnvPath) && !this.options.skipSync) {
+        this.logger.newline();
+        this.logger.warning(
+          `The worktree has a .env but ${path.basename(mainRepo)} does not.`
+        );
+        this.logger.info('  These variables would be lost when the worktree is removed.');
+
+        if (!this.options.dryRun) {
+          writeFileSync(mainEnvPath, '', 'utf8');
+          seededMainEnv = true;
+        }
+      }
 
       if (existsSync(worktreeEnvPath) && existsSync(mainEnvPath) && !this.options.skipSync) {
         this.logger.newline();
@@ -160,7 +178,16 @@ export class CloseCommand {
                   backupCreated = true;
                   this.logger.success('Backup created');
                 } catch (error) {
-                  this.logger.warning(`Backup failed: ${error}`);
+                  // The sync overwrites main's .env in place, and .env is
+                  // normally gitignored, so proceeding without a backup can
+                  // destroy the only copy of a value.
+                  this.logger.error(`Backup failed: ${error}`);
+                  this.logger.error('Refusing to sync without a backup. Aborting worktree closure.');
+                  this.logger.info(
+                    '  Fix the backup location, or set sync.createBackupBeforeSync to false ' +
+                      'in ~/.workforge/config.json to sync without one.'
+                  );
+                  process.exit(1);
                 }
               }
 
@@ -198,6 +225,15 @@ export class CloseCommand {
         this.logger.verbose('Skipping environment sync (--skip-sync)');
       } else {
         this.logger.verbose('No .env files found for sync');
+      }
+
+      // Nothing was synced into the placeholder, so don't leave it behind.
+      if (seededMainEnv && !syncPerformed) {
+        try {
+          unlinkSync(mainEnvPath);
+        } catch {
+          // Leaving an empty .env behind is harmless; ignore.
+        }
       }
 
       // Step 4: Confirm closure (unless --yes or --dry-run)

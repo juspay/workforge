@@ -159,6 +159,16 @@ export type EnvVariable = {
   comment?: string;          // Inline comment if present
   hasQuotes?: boolean;       // Whether value was quoted
   quoteType?: 'single' | 'double';
+  raw?: string;              // Exact original text; re-emitted verbatim when untouched
+  leadingTrivia?: string[];  // Comment/blank lines immediately above this variable
+};
+
+/**
+ * A parsed .env file, including the trivia that follows the last variable
+ */
+export type ParsedEnvFile = {
+  variables: Map<string, EnvVariable>;
+  trailingTrivia: string[];  // Comment/blank lines after the final variable
 };
 
 /**
