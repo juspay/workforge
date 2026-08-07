@@ -47,7 +47,8 @@ export class EnvSyncer {
 
     try {
       // Parse target file
-      const targetVars = this.parser.parse(targetPath);
+      const target = this.parser.parseFile(targetPath);
+      const targetVars = target.variables;
 
       // Apply changes based on decision
       const updatedVars = this.mergeVariables(targetVars, diff, decision);
@@ -62,7 +63,12 @@ export class EnvSyncer {
       result.removedCount = decision.removedKeys.size;
 
       // Write updated variables back to target
-      const content = this.parser.stringify(updatedVars);
+      const content = this.parser.stringify(updatedVars, target.trailingTrivia);
+
+      // .env files are usually gitignored, so a corrupted write can be
+      // unrecoverable. Verify before committing it to disk.
+      this.assertUntouchedVariablesSurvive(content, targetVars, decision);
+
       writeFileSync(targetPath, content, 'utf8');
 
       result.success = true;
@@ -89,17 +95,29 @@ export class EnvSyncer {
   ): Map<string, EnvVariable> {
     const merged = new Map(targetVars);
 
+    // Appended variables go after everything already in the target. Reusing the
+    // source file's line number would drop them at an arbitrary position in the
+    // middle of an unrelated file.
+    let nextLine = Math.max(0, ...Array.from(merged.values()).map(v => v.lineNumber ?? 0));
+
     // Apply added variables
     for (const variable of diff.added) {
       if (decision.addedKeys.has(variable.key)) {
-        merged.set(variable.key, variable);
+        // `raw` is dropped: the line is rendered fresh for this file.
+        merged.set(variable.key, {
+          ...variable,
+          lineNumber: ++nextLine,
+          raw: undefined,
+          leadingTrivia: undefined
+        });
       }
     }
 
     // Apply modified variables
     for (const modification of diff.modified) {
       if (decision.modifiedKeys.has(modification.key)) {
-        // Create updated variable preserving target's line number
+        // Create updated variable preserving target's line number and the
+        // comment/blank lines that sat above it.
         const existing = merged.get(modification.key);
         const lineNumber = existing ? existing.lineNumber : modification.newLineNumber;
 
@@ -109,7 +127,8 @@ export class EnvSyncer {
           lineNumber,
           comment: modification.newComment,
           hasQuotes: modification.newHasQuotes,
-          quoteType: modification.newQuoteType
+          quoteType: modification.newQuoteType,
+          leadingTrivia: existing?.leadingTrivia
         });
       }
     }
@@ -122,6 +141,55 @@ export class EnvSyncer {
     }
 
     return merged;
+  }
+
+  /**
+   * Verify that variables the user did not select are unchanged.
+   *
+   * Re-parses the content that is about to be written and compares every
+   * untouched key against what the target held before. Any drift — a value
+   * clipped by a mis-detected comment, an escape decoded wrongly, a key that
+   * vanished — aborts the sync instead of silently writing corruption.
+   *
+   * @param content - Content about to be written
+   * @param original - Variables as parsed from the target before merging
+   * @param decision - User sync decision
+   */
+  private assertUntouchedVariablesSurvive(
+    content: string,
+    original: Map<string, EnvVariable>,
+    decision: SyncDecision
+  ): void {
+    const reparsed = this.parser.parseContent(content).variables;
+    const drifted: string[] = [];
+
+    for (const [key, before] of original) {
+      if (
+        decision.addedKeys.has(key) ||
+        decision.modifiedKeys.has(key) ||
+        decision.removedKeys.has(key)
+      ) {
+        continue;
+      }
+
+      const after = reparsed.get(key);
+
+      if (!after) {
+        drifted.push(`${key} (disappeared)`);
+        continue;
+      }
+
+      if (after.value !== before.value) {
+        drifted.push(`${key} (value changed)`);
+      }
+    }
+
+    if (drifted.length > 0) {
+      throw new Error(
+        `Refusing to write: ${drifted.length} variable(s) not selected for sync ` +
+          `would have been altered: ${drifted.join(', ')}. The target file was left untouched.`
+      );
+    }
   }
 
   /**

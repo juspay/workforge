@@ -134,16 +134,34 @@ Comprehensive .env file parser with advanced features.
 
 **Key Methods:**
 - `parse(filePath)` - Parse .env file to variable map
-- `stringify(variables)` - Convert variable map to .env format
+- `parseFile(filePath)` - Same, plus the trivia after the last variable
+- `parseContent(content)` - Parse from a string (used by the round-trip guard)
+- `stringify(variables, trailingTrivia?)` - Convert variable map to .env format
 
 **Supported Features:**
 - Single-line variables: `KEY=value`
 - Multi-line values with quotes: `KEY="value\nline2"`
 - Comments: `# comment` or `// comment`
-- Inline comments: `KEY=value # comment`
+- Inline comments: `KEY=value # comment`, requiring whitespace before the marker
 - Single and double quotes
 - Escape sequences: `\n`, `\t`, `\\`, `\"`
-- Invalid line recovery (skips malformed lines)
+- CRLF and bare-CR line endings, normalised on read
+- Invalid line recovery (skips malformed lines, warns on duplicate keys)
+
+**Fidelity — why rewriting a file is safe:**
+
+Each variable keeps its exact original text in `raw`, plus the comment and blank
+lines above it in `leadingTrivia`. `stringify` re-emits `raw` verbatim, so a
+variable nobody changed is byte-identical after a rewrite; only added or
+modified variables are serialised from their fields. Trivia after the last
+variable is carried on `ParsedEnvFile.trailingTrivia` and must be passed back to
+`stringify` — `parse()` alone returns a Map and cannot carry it.
+
+Three consequences this design exists to prevent, all of which used to corrupt
+untouched variables on every sync:
+- `KEY=sk_live_abc#def` — `#` without preceding whitespace is part of the value, not a comment
+- `KEY="C:\\Users\\name"` — escapes decode in one left-to-right pass; sequential regex replacements rescanned their own output and turned `\name` into a newline
+- Standalone comments and blank lines are preserved rather than dropped
 
 **Example:**
 ```env
@@ -265,10 +283,18 @@ Applies sync decisions to .env files.
 
 **Sync Process:**
 1. Validate decision matches diff
-2. Load target .env
-3. Merge variables based on decision
-4. Write updated .env
-5. Return sync result with stats
+2. Load target .env (`parseFile`, keeping trivia)
+3. Merge variables based on decision — added variables are appended after
+   everything already in the target, never inserted at the source file's line number
+4. Render the new content
+5. **Round-trip guard**: re-parse that content and assert every variable the user
+   did *not* select is still present and unchanged. Any drift throws, so the
+   target file is left untouched rather than silently corrupted
+6. Write updated .env
+7. Return sync result with stats
+
+The guard exists because `.env` is normally gitignored: a bad write is often
+unrecoverable, so a loud failure beats a silent one.
 
 ---
 
@@ -283,7 +309,9 @@ Manages automatic backups with rotation.
 - `deleteBackup(backupId)` - Delete specific backup
 - `cleanupOldBackups()` - Auto-cleanup old backups
 
-**Backup Format:** `.env.backup.YYYY-MM-DD_HH-mm-ss`
+**Backup Format:** `.env.backup.YYYY-MM-DD_HH-mm-ss`, with a `-N` suffix when
+two backups land in the same second. Written with `COPYFILE_EXCL` so a backup
+can never silently overwrite an earlier snapshot.
 
 **Backup Location:** `~/.workforge/backups/<project-id>/`
 
@@ -474,14 +502,19 @@ Closes worktrees with intelligent environment sync.
 
 **Workflow:**
 1. Discover worktree (path, name, or auto-detect)
-2. Run safety checks
-3. Check environment differences
+2. Run safety checks (fetches first; merge status is judged against `<remote>/<primary>`)
+3. Check environment differences. If the worktree has a `.env` and the main repo
+   does not, seed an empty one so the values are offered for sync instead of
+   being destroyed with the worktree — the placeholder is removed again if
+   nothing is synced
 4. Show diff visualization
 5. Interactive variable selection
-6. Create backup
-7. Apply sync
+6. Create backup — **a backup failure aborts the close**; the sync overwrites
+   main's `.env` in place and `.env` is normally gitignored
+7. Apply sync (guarded: unselected variables must survive unchanged)
 8. Remove worktree
-9. Delete branch (optional)
+9. Delete branch (optional) — refuses the repository's primary branch, plus
+   `main`/`master`, and only force-deletes when `--force` is given
 10. Log audit trail
 
 **Options:**

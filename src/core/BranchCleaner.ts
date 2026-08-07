@@ -1,5 +1,6 @@
 import { spawnSync } from 'child_process';
 import { SafetyCheckResult, OperationResult, BranchDeletionRecommendation, RelatedBranches } from '../types/index.js';
+import { BranchResolver } from './BranchResolver.js';
 
 /**
  * Branch Cleaner
@@ -28,11 +29,18 @@ export class BranchCleaner {
   ): Promise<OperationResult> {
     const warnings: string[] = [];
 
-    // Check if branch is main/master
-    if (branchName === 'main' || branchName === 'master') {
+    // Never delete the repository's primary branch. Matching only 'main' and
+    // 'master' left `release`, `develop`, `trunk` and friends unprotected — and
+    // `git branch -d release` succeeds whenever release is an ancestor of HEAD,
+    // which is the normal case for a branch forked from it.
+    const protection = this.getProtectedBranches(repoRoot);
+    if (protection.branches.has(branchName)) {
       return {
         success: false,
-        message: 'Cannot delete main/master branch',
+        message:
+          branchName === protection.primary
+            ? `Cannot delete "${branchName}": it is the repository's primary branch`
+            : `Cannot delete "${branchName}": it is a protected default branch name`,
         warnings: []
       };
     }
@@ -183,6 +191,32 @@ export class BranchCleaner {
    */
   private getDeletionStrategy(force: boolean): 'safe' | 'force' {
     return force ? 'force' : 'safe';
+  }
+
+  /**
+   * Branches that must never be deleted.
+   *
+   * The repository's detected primary branch, plus 'main' and 'master' as a
+   * baseline so an offline or remote-less repository stays protected.
+   *
+   * @param repoRoot - Repository root path
+   */
+  private getProtectedBranches(repoRoot: string): { branches: Set<string>; primary: string | null } {
+    const branches = new Set(['main', 'master']);
+    let primary: string | null = null;
+
+    try {
+      const resolver = new BranchResolver(repoRoot);
+      const detected = resolver.detectPrimaryBranch(resolver.getRemoteName());
+      if (detected) {
+        primary = detected.branch;
+        branches.add(detected.branch);
+      }
+    } catch {
+      // Baseline protection still applies.
+    }
+
+    return { branches, primary };
   }
 
   /**

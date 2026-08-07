@@ -37,14 +37,38 @@ export class ProjectIdentifier {
    * @returns Remote origin URL
    */
   private static getRemoteUrl(repoRoot: string): string {
-    const result = spawnSync('git', ['remote', 'get-url', 'origin'], {
+    // Prefer 'origin', but fall back to the first configured remote. Hardcoding
+    // 'origin' meant a fork with only an 'upstream' remote hashed its path
+    // instead, so moving or renaming the directory orphaned every backup and
+    // the whole audit history.
+    const remotes = spawnSync('git', ['remote'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: 'pipe'
+    });
+
+    const names =
+      remotes.status === 0 && remotes.stdout
+        ? remotes.stdout
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+        : [];
+
+    if (names.length === 0) {
+      return repoRoot;
+    }
+
+    const remote = names.includes('origin') ? 'origin' : names[0];
+
+    const result = spawnSync('git', ['remote', 'get-url', remote], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: 'pipe'
     });
 
     if (result.status !== 0 || !result.stdout) {
-      // Fallback to repo path if no remote
+      // Fallback to repo path if the URL cannot be read
       return repoRoot;
     }
 

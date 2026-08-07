@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, copyFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, copyFileSync, constants } from 'fs';
 import * as path from 'path';
 import { ProjectIdentifier } from './ProjectIdentifier.js';
 import { ConfigManager } from './ConfigManager.js';
@@ -66,14 +66,16 @@ export class BackupManager {
       mkdirSync(backupDir, { recursive: true });
     }
 
-    // Generate timestamp-based backup filename
+    // Generate timestamp-based backup filename. Timestamps are only
+    // second-resolution, so two syncs in the same second would otherwise
+    // overwrite each other's snapshot — claim the name exclusively and add a
+    // suffix on collision.
     const timestamp = this.generateTimestamp();
-    const backupFileName = `.env.backup.${timestamp}`;
-    const backupPath = path.join(backupDir, backupFileName);
+    const backupPath = this.claimBackupPath(backupDir, timestamp);
 
     // Copy file to backup location
     try {
-      copyFileSync(envPath, backupPath);
+      copyFileSync(envPath, backupPath, constants.COPYFILE_EXCL);
     } catch (error) {
       throw new Error(`Failed to create backup: ${error}`);
     }
@@ -216,6 +218,29 @@ export class BackupManager {
    *
    * @returns Timestamp string
    */
+  /**
+   * Pick a backup path that no existing backup already occupies
+   *
+   * @param backupDir - Directory backups live in
+   * @param timestamp - Second-resolution timestamp
+   */
+  private claimBackupPath(backupDir: string, timestamp: string): string {
+    const base = path.join(backupDir, `.env.backup.${timestamp}`);
+
+    if (!existsSync(base)) {
+      return base;
+    }
+
+    for (let suffix = 1; suffix < 1000; suffix++) {
+      const candidate = `${base}-${suffix}`;
+      if (!existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    throw new Error(`Failed to create backup: too many backups for ${timestamp}`);
+  }
+
   private generateTimestamp(): string {
     const now = new Date();
 

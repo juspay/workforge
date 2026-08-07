@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { EnvVariable, ParsedValue, MultilineStart } from '../types/index.js';
+import { EnvVariable, ParsedValue, MultilineStart, ParsedEnvFile } from '../types/index.js';
 
 /**
  * Environment File Parser
@@ -20,13 +20,60 @@ export class EnvFileParser {
    * @returns Map of key to EnvVariable
    */
   parse(filePath: string): Map<string, EnvVariable> {
-    const content = readFileSync(filePath, 'utf8');
-    const lines = content.split('\n');
+    return this.parseFile(filePath).variables;
+  }
+
+  /**
+   * Parse .env file, keeping the trivia that follows the last variable
+   *
+   * @param filePath - Path to .env file
+   */
+  parseFile(filePath: string): ParsedEnvFile {
+    return this.parseContent(readFileSync(filePath, 'utf8'));
+  }
+
+  /**
+   * Parse .env content.
+   *
+   * Preserves each variable's exact original text and the comment/blank lines
+   * above it, so a file can be rewritten without disturbing anything the caller
+   * did not explicitly change.
+   *
+   * @param content - Raw .env file content
+   */
+  parseContent(content: string): ParsedEnvFile {
+    // Normalise line endings once, so a CRLF file cannot leak a stray '\r'
+    // into a multi-line value.
+    const lines = content.split(/\r\n|\r|\n/);
+
+    // A trailing newline yields a final empty element that is not a real line.
+    if (lines.length > 0 && lines[lines.length - 1] === '') {
+      lines.pop();
+    }
+
     const variables = new Map<string, EnvVariable>();
+    let trivia: string[] = [];
 
     let multilineBuffer: string | null = null;
     let multilineStart = 0;
     let multilineKey = '';
+    let multilineTrivia: string[] = [];
+
+    const record = (variable: EnvVariable | null, raw: string, leading: string[]): void => {
+      if (!variable) {
+        return;
+      }
+
+      const existing = variables.get(variable.key);
+      if (existing) {
+        console.warn(
+          `Warning: Duplicate key "${variable.key}" at line ${variable.lineNumber} ` +
+            `overrides the definition at line ${existing.lineNumber}`
+        );
+      }
+
+      variables.set(variable.key, { ...variable, raw, leadingTrivia: leading });
+    };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -36,18 +83,21 @@ export class EnvFileParser {
         multilineBuffer += '\n' + line;
 
         if (this.isMultilineComplete(multilineBuffer)) {
-          const variable = this.parseLine(multilineBuffer, multilineStart, multilineKey);
-          if (variable) {
-            variables.set(variable.key, variable);
-          }
+          record(
+            this.parseLine(multilineBuffer, multilineStart, multilineKey),
+            multilineBuffer,
+            multilineTrivia
+          );
           multilineBuffer = null;
           multilineKey = '';
+          multilineTrivia = [];
         }
         continue;
       }
 
-      // Skip comments and empty lines
+      // Comments and empty lines are kept as trivia for the next variable
       if (this.isComment(line) || line.trim() === '') {
+        trivia.push(line);
         continue;
       }
 
@@ -57,60 +107,87 @@ export class EnvFileParser {
         multilineBuffer = line;
         multilineStart = i + 1;
         multilineKey = multilineInfo.key;
+        multilineTrivia = trivia;
+        trivia = [];
         continue;
       }
 
       // Parse single line
-      const variable = this.parseLine(line, i + 1);
-      if (variable) {
-        variables.set(variable.key, variable);
-      }
+      record(this.parseLine(line, i + 1), line, trivia);
+      trivia = [];
     }
 
     // Handle unclosed multiline (treat as error, but include what we have)
     if (multilineBuffer !== null) {
       console.warn(`Warning: Unclosed multiline value for ${multilineKey} at line ${multilineStart}`);
-      const variable = this.parseLine(multilineBuffer, multilineStart, multilineKey);
-      if (variable) {
-        variables.set(variable.key, variable);
-      }
+      record(
+        this.parseLine(multilineBuffer, multilineStart, multilineKey),
+        multilineBuffer,
+        multilineTrivia
+      );
+      trivia = [];
     }
 
-    return variables;
+    return { variables, trailingTrivia: trivia };
   }
 
   /**
    * Convert variable map back to .env format
    *
+   * A variable that still carries its original text is re-emitted verbatim, so
+   * rewriting a file never reformats — or corrupts — entries the caller did not
+   * touch. Only added or modified variables are serialised from their fields.
+   *
    * @param vars - Map of key to EnvVariable
+   * @param trailingTrivia - Comment/blank lines to append after the last variable
    * @returns Formatted .env file content
    */
-  stringify(vars: Map<string, EnvVariable>): string {
+  stringify(vars: Map<string, EnvVariable>, trailingTrivia: string[] = []): string {
     const lines: string[] = [];
 
     // Sort by line number to maintain order
     const sorted = Array.from(vars.values()).sort((a, b) => (a.lineNumber ?? 0) - (b.lineNumber ?? 0));
 
     for (const variable of sorted) {
-      const { key, value, hasQuotes, quoteType, comment } = variable;
-
-      let line = `${key}=`;
-
-      if (hasQuotes && quoteType) {
-        const quote = quoteType === 'single' ? "'" : '"';
-        line += `${quote}${value}${quote}`;
-      } else {
-        line += value;
+      if (variable.leadingTrivia) {
+        lines.push(...variable.leadingTrivia);
       }
 
-      if (comment) {
-        line += ` ${comment}`;
+      if (variable.raw !== undefined) {
+        lines.push(variable.raw);
+        continue;
       }
 
-      lines.push(line);
+      lines.push(this.serialize(variable));
     }
 
-    return lines.join('\n') + '\n';
+    lines.push(...trailingTrivia);
+
+    return lines.length > 0 ? lines.join('\n') + '\n' : '';
+  }
+
+  /**
+   * Render a variable as a `KEY=value` line
+   *
+   * @param variable - Variable to render
+   */
+  private serialize(variable: EnvVariable): string {
+    const { key, value, hasQuotes, quoteType, comment } = variable;
+
+    let line = `${key}=`;
+
+    if (hasQuotes && quoteType) {
+      const quote = quoteType === 'single' ? "'" : '"';
+      line += `${quote}${this.escapeValue(value, quoteType)}${quote}`;
+    } else {
+      line += value;
+    }
+
+    if (comment) {
+      line += ` ${comment}`;
+    }
+
+    return line;
   }
 
   /**
@@ -256,37 +333,74 @@ export class EnvFileParser {
       return value.replace(/\\'/g, "'");
     }
 
-    // Double quotes: unescape common sequences
+    // Double quotes: decode in a single left-to-right pass. Sequential regex
+    // replacements would rescan their own output — `C:\\Users\\name` would have
+    // the backslash before `name` combine into a newline.
+    let out = '';
+
+    for (let i = 0; i < value.length; i++) {
+      if (value[i] !== '\\' || i === value.length - 1) {
+        out += value[i];
+        continue;
+      }
+
+      const next = value[++i];
+      switch (next) {
+        case 'n': out += '\n'; break;
+        case 'r': out += '\r'; break;
+        case 't': out += '\t'; break;
+        case '"': out += '"'; break;
+        case '\\': out += '\\'; break;
+        default: out += '\\' + next; break;
+      }
+    }
+
+    return out;
+  }
+
+  /**
+   * Re-encode a value for writing inside quotes
+   *
+   * Inverse of unescapeValue. Without this, a decoded backslash or newline
+   * would be written raw and break the file on the next read.
+   *
+   * @param value - Decoded value
+   * @param quoteType - Type of quotes being used
+   */
+  private escapeValue(value: string, quoteType: 'single' | 'double'): string {
+    if (quoteType === 'single') {
+      return value.replace(/'/g, "\\'");
+    }
+
     return value
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '\r')
-      .replace(/\\t/g, '\t')
-      .replace(/\\"/g, '"')
-      .replace(/\\\\/g, '\\');
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
   }
 
   /**
    * Find index of inline comment (# or //)
    *
+   * Both markers require preceding whitespace (or the start of the value), so
+   * that `sk_live_51H8x#special` and `http://example.com` stay intact.
+   *
    * @param line - Line to search
    * @returns Index of comment start, or -1 if none
    */
   private findInlineComment(line: string): number {
-    // Look for # or //
-    const hashIndex = line.indexOf('#');
+    const hashMatch = line.match(/(^|\s)#/);
+    const hashIndex =
+      hashMatch && hashMatch.index !== undefined
+        ? hashMatch.index + hashMatch[1].length
+        : -1;
 
-    // For //, require whitespace before it to avoid matching URLs (http://, https://)
-    // This prevents treating http://example.com as a comment
-    let slashIndex = -1;
-    const slashPattern = / \/\//; // Space followed by //
-    const match = line.match(slashPattern);
-    if (match && match.index !== undefined) {
-      slashIndex = match.index + 1; // +1 to skip the space and point to //
-    }
-
-    if (hashIndex === -1 && slashIndex === -1) {
-      return -1;
-    }
+    const slashMatch = line.match(/(^|\s)\/\//);
+    const slashIndex =
+      slashMatch && slashMatch.index !== undefined
+        ? slashMatch.index + slashMatch[1].length
+        : -1;
 
     if (hashIndex === -1) return slashIndex;
     if (slashIndex === -1) return hashIndex;
