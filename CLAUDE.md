@@ -11,6 +11,16 @@ WorkForge v3.0 is a TypeScript CLI tool for managing Git worktrees with intellig
 ## Development Commands
 
 ```bash
+# Run the test suite (builds first — command tests drive the built CLI)
+pnpm test
+
+# Watch mode
+pnpm run test:watch
+
+# A single file, or a single test by name
+npx vitest run test/env-parser.test.ts
+npx vitest run test/create.test.ts -t "forks from the remote tip"
+
 # Build TypeScript to JavaScript
 pnpm run build
 
@@ -69,7 +79,39 @@ src/
 ├── types/
 │   └── index.ts       # TypeScript interfaces
 └── index.ts           # CLI router (yargs)
+
+test/
+├── helpers/
+│   └── fixtures.ts    # Isolated bare remote + clone, CLI runner
+├── env-parser.test.ts # Parser fidelity and sync safety (unit)
+├── create.test.ts     # create command (drives the built CLI)
+└── close.test.ts      # close, BranchCleaner, BackupManager, ProjectIdentifier
 ```
+
+---
+
+## Testing
+
+`pnpm test` builds, then runs Vitest. 41 tests, ~16s.
+
+**How the fixtures work.** `makeRepo()` builds a bare repository standing in for
+the remote, a `seed` checkout used to push "someone else's" commits, and the
+`local` clone under test. `advanceRemote: true` pushes an extra commit so the
+clone's local branch starts out **stale** — that gap is what most of the
+create-side regressions were about. `.env` is gitignored in the fixture, matching
+real projects; without that it registers as an uncommitted change and blocks
+`close`.
+
+Command tests spawn the built CLI (`dist/index.js`) rather than importing it,
+because the commands call `process.exit`. Unit tests import from `src` directly.
+
+**Serial by design.** `fileParallelism: false` — fixtures share `~/.workforge`
+state (backups, audit logs, project metadata), so parallel files would race.
+
+**These tests are regression guards, not coverage.** Every one of them maps to a
+defect that shipped. Before trusting a change here, confirm the relevant test
+still fails when the fix is reverted — the suite has been mutation-checked
+against the `#`-comment, protected-branch, and remote-tip fixes.
 
 ---
 
