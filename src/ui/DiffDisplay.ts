@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { EnvDiff, EnvVariable, EnvModification } from '../types/index.js';
+import { toSingleLine } from '../utils/strings.js';
 import { Logger } from './Logger.js';
 
 /**
@@ -344,11 +345,15 @@ export class DiffDisplay {
   private truncate(value: string, maxLength?: number): string {
     const limit = maxLength || this.maxValueLength;
 
-    if (value.length <= limit) {
-      return value;
+    // Collapse first: a raw newline in a value would otherwise break the diff
+    // layout and hide part of what the user is being asked to approve.
+    const single = toSingleLine(value);
+
+    if (single.length <= limit) {
+      return single;
     }
 
-    return value.substring(0, limit - 3) + '...';
+    return single.substring(0, limit - 3) + '...';
   }
 
   /**

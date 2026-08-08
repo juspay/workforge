@@ -1,5 +1,6 @@
 import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'fs';
+import * as path from 'path';
 import { WorktreeInfo, OperationResult, RemovalStrategy } from '../types/index.js';
 
 /**
@@ -18,11 +19,13 @@ export class WorktreeRemover {
    *
    * @param worktree - Worktree information
    * @param force - Force removal even if worktree has changes
+   * @param repoRoot - Repository to run git in; defaults to the process cwd
    * @returns Result object with success status and message
    */
   async remove(
     worktree: WorktreeInfo,
-    force: boolean = false
+    force: boolean = false,
+    repoRoot: string = process.cwd()
   ): Promise<OperationResult> {
     // Check if worktree is locked
     if (worktree.isLocked && !force) {
@@ -35,7 +38,7 @@ export class WorktreeRemover {
     // Check if worktree is prunable (directory missing)
     if (worktree.isPrunable) {
       // Use git worktree prune instead
-      return this.prune(worktree);
+      return this.prune(worktree, repoRoot);
     }
 
     // Check if directory exists
@@ -54,12 +57,21 @@ export class WorktreeRemover {
 
     if (force) {
       args.push('--force');
+
+      // Git requires `remove -f -f` to override a lock; a single --force only
+      // overrides the dirty-working-tree check. Without the second flag a
+      // locked worktree could never be removed, and the error told the user to
+      // pass the flag they had just passed.
+      if (worktree.isLocked) {
+        args.push('--force');
+      }
     }
 
     args.push(worktree.path);
 
     // Execute removal
     const result = spawnSync('git', args, {
+      cwd: repoRoot,
       encoding: 'utf8',
       stdio: 'pipe'
     });
@@ -82,7 +94,14 @@ export class WorktreeRemover {
       };
     }
 
-    if (errorMessage.includes('uncommitted changes') || errorMessage.includes('modified files')) {
+    // Git's actual wording is "contains modified or untracked files, use
+    // --force to delete it"; the previous substrings never matched, so users
+    // got the raw fatal instead of this guidance.
+    if (
+      errorMessage.includes('contains modified or untracked files') ||
+      errorMessage.includes('uncommitted changes') ||
+      errorMessage.includes('modified files')
+    ) {
       return {
         success: false,
         message: 'Worktree has uncommitted changes. Commit, stash, or use --force.'
@@ -103,13 +122,89 @@ export class WorktreeRemover {
   }
 
   /**
-   * Prune worktree (when directory is missing)
+   * Locate the `.git/worktrees/<name>` directory belonging to a worktree path.
+   *
+   * The directory name is usually the path's basename but git disambiguates
+   * collisions, so each candidate's `gitdir` file is read and compared instead
+   * of guessing.
+   *
+   * @param worktreePath - Absolute path of the worktree
+   * @param repoRoot - Repository to run git in
+   * @returns Absolute path to the administrative directory, or null
+   */
+  private findAdminDir(worktreePath: string, repoRoot: string): string | null {
+    const commonDir = spawnSync(
+      'git',
+      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+      { cwd: repoRoot, encoding: 'utf8', stdio: 'pipe' }
+    );
+
+    if (commonDir.status !== 0 || !commonDir.stdout) {
+      return null;
+    }
+
+    const worktreesDir = path.join(commonDir.stdout.trim(), 'worktrees');
+    if (!existsSync(worktreesDir)) {
+      return null;
+    }
+
+    const target = path.resolve(worktreePath);
+
+    try {
+      for (const entry of readdirSync(worktreesDir)) {
+        const gitdirFile = path.join(worktreesDir, entry, 'gitdir');
+        if (!existsSync(gitdirFile)) {
+          continue;
+        }
+
+        // `gitdir` holds the path to the worktree's own .git file.
+        const recorded = readFileSync(gitdirFile, 'utf8').trim();
+        if (path.resolve(path.dirname(recorded)) === target) {
+          return path.join(worktreesDir, entry);
+        }
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Prune a single worktree whose directory has gone missing.
+   *
+   * Scoped deliberately: `git worktree prune` takes no path argument and would
+   * discard the administrative data of *every* prunable worktree in the
+   * repository, including ones the user never asked about. Removing just this
+   * worktree's own directory under `.git/worktrees/` is exactly what prune
+   * would do for it, and nothing more.
    *
    * @param worktree - Worktree information
+   * @param repoRoot - Repository to run git in
    * @returns Result object with success status and message
    */
-  private async prune(worktree: WorktreeInfo): Promise<OperationResult> {
+  private async prune(worktree: WorktreeInfo, repoRoot: string): Promise<OperationResult> {
+    const adminDir = this.findAdminDir(worktree.path, repoRoot);
+
+    if (adminDir) {
+      try {
+        rmSync(adminDir, { recursive: true, force: true });
+        return {
+          success: true,
+          message: `Worktree pruned successfully: ${worktree.path}`
+        };
+      } catch (error) {
+        return {
+          success: false,
+          message: `Failed to prune worktree: ${error instanceof Error ? error.message : error}`
+        };
+      }
+    }
+
+    // Administrative directory not found — fall back to git, which is
+    // repository-wide but still the correct outcome for this worktree.
     const result = spawnSync('git', ['worktree', 'prune'], {
+      cwd: repoRoot,
       encoding: 'utf8',
       stdio: 'pipe'
     });

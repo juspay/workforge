@@ -402,6 +402,15 @@ Logs all sync operations in dual formats.
 - `getHistory()` - Get sync history
 - `getStatistics()` - Get usage statistics
 
+**Durability.** The history file is a read-modify-write shared by every
+invocation against the same project, so `addToHistory` takes a `mkdir`-based
+lock (atomic on all platforms, reclaimed after 10s if a holder dies) and writes
+through a temp file plus `rename`. An unparseable history is moved aside as
+`sync-history.json.corrupt-<timestamp>` rather than overwritten — it may be the
+only record of months of operations. The human-readable log is rebuilt the same
+way; it used to be deleted and re-appended entry by entry, so an interrupt
+truncated it permanently.
+
 **Log Formats:**
 
 **Human-Readable:** `~/.workforge/projects/<project-id>/audit.log`
@@ -626,8 +635,14 @@ Lists all worktrees with status indicators.
 - **Copy-Paste Ready**: Can directly use `cd <path>` from output
 - **JSON Format**: Includes both absolute and relative paths
 
+**Sorting:** `--sort age` uses each worktree's HEAD commit time
+(`WorktreeInfo.commitTimestamp`, populated by `WorktreeResolver`). It previously
+compared commit *hashes*, which carry no chronological information.
+
 **Status Indicators:**
-- **MAIN**: Main repository
+- **MAIN**: Main repository — detected by position (git always lists the main
+  worktree first), not by the porcelain `bare` line, which only appears for
+  bare repositories
 - **ACTIVE**: Normal worktree
 - **LOCKED**: Locked worktree
 - **PRUNABLE**: Directory missing

@@ -82,6 +82,18 @@ export class SyncEnvCommand {
       }
 
       // Step 2: Handle bidirectional sync
+      //
+      // --between has no defined direction until the user picks one, so it
+      // cannot be combined with --yes. Silently accepting whichever direction
+      // the resolver happened to produce could delete worktree-only variables.
+      if (this.options.between && this.options.yes) {
+        this.logger.error('--between requires an interactive direction choice, so it cannot be used with --yes.');
+        this.logger.info(
+          `  Pick a direction explicitly instead: --from ${targets.sourceLabel} --to ${targets.targetLabel} --yes`
+        );
+        process.exit(1);
+      }
+
       if (this.options.between && !this.options.yes) {
         const direction = await this.syncPrompt.promptDirection(
           targets.sourceLabel,
