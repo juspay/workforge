@@ -52,7 +52,10 @@ export class WorktreeResolver {
       throw new Error('Failed to list worktrees');
     }
 
-    return this.parseWorktreeList(result.stdout);
+    const worktrees = this.parseWorktreeList(result.stdout);
+    this.attachCommitTimestamps(worktrees, repoRoot);
+
+    return worktrees;
   }
 
   /**
@@ -311,7 +314,44 @@ export class WorktreeResolver {
       worktrees.push(this.completeWorktreeInfo(current));
     }
 
+    // Git only emits a `bare` line for bare repositories, so the check above
+    // never fired for an ordinary repo and every entry — including the main
+    // one — came back with isMainRepo false. Git always lists the main worktree
+    // first, so fall back to that.
+    if (worktrees.length > 0 && !worktrees.some(w => w.isMainRepo)) {
+      worktrees[0].isMainRepo = true;
+    }
+
     return worktrees;
+  }
+
+  /**
+   * Attach each worktree's HEAD commit time, for chronological sorting
+   *
+   * @param worktrees - Worktrees to annotate, modified in place
+   * @param repoRoot - Repository root to run git from
+   */
+  private attachCommitTimestamps(worktrees: WorktreeInfo[], repoRoot: string): void {
+    for (const worktree of worktrees) {
+      if (!worktree.commitHash) {
+        continue;
+      }
+
+      const result = spawnSync('git', ['log', '-1', '--format=%ct', worktree.commitHash], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: 'pipe'
+      });
+
+      if (result.status !== 0 || !result.stdout) {
+        continue;
+      }
+
+      const seconds = parseInt(result.stdout.trim(), 10);
+      if (!Number.isNaN(seconds)) {
+        worktree.commitTimestamp = seconds;
+      }
+    }
   }
 
   /**

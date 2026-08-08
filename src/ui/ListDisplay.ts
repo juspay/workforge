@@ -219,11 +219,12 @@ export class ListDisplay {
         break;
 
       case 'age':
-        // Sort by commit hash (not perfect, but reasonable approximation)
+        // Most recent commit first. This used to compare commit *hashes*,
+        // which are hex digests and carry no chronological information at all.
         sorted.sort((a, b) => {
-          if (!a.commitHash) return 1;
-          if (!b.commitHash) return -1;
-          return b.commitHash.localeCompare(a.commitHash);
+          if (a.commitTimestamp === undefined) return 1;
+          if (b.commitTimestamp === undefined) return -1;
+          return b.commitTimestamp - a.commitTimestamp;
         });
         break;
     }

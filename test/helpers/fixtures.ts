@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,9 +14,15 @@ export const CLI = path.join(REPO_ROOT, 'dist', 'index.js');
 
 const tempRoots: string[] = [];
 
-/** Create a temp directory that `cleanupFixtures()` will remove. */
+/**
+ * Create a temp directory that `cleanupFixtures()` will remove.
+ *
+ * The path is resolved through `realpath` because macOS hands out
+ * `/var/folders/...` while git reports the canonical `/private/var/folders/...`
+ * — comparing worktree paths would otherwise never match.
+ */
 export function makeTempDir(prefix = 'wf-test-'): string {
-  const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), prefix)));
   tempRoots.push(dir);
   return dir;
 }
