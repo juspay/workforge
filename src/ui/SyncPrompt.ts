@@ -1,6 +1,7 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { EnvDiff, SyncDecision } from '../types/index.js';
+import { toSingleLine } from '../utils/strings.js';
 import { Logger } from './Logger.js';
 
 /**
@@ -61,6 +62,11 @@ export class SyncPrompt {
         type: 'list',
         name: 'syncMode',
         message: 'How would you like to sync?',
+        // Stated explicitly rather than relying on inquirer highlighting
+        // choices[0]: the default here decides what a bare Enter does, so it
+        // should be a deliberate choice in the source, not a side effect of
+        // list order. The confirm step below defaults to no.
+        default: 'all',
         choices: [
           {
             name: 'Sync all changes',
@@ -250,7 +256,10 @@ export class SyncPrompt {
         type: 'confirm',
         name: 'confirmed',
         message: 'Proceed with sync?',
-        default: true
+        // The mode list above already defaults to "Sync all changes", so a
+        // default of yes here would let two blind Enters overwrite the target.
+        // This is the last checkpoint before a destructive write.
+        default: false
       }
     ]);
 
@@ -314,11 +323,16 @@ export class SyncPrompt {
    * Truncate long values for display
    */
   private truncate(value: string, maxLength: number): string {
-    if (value.length <= maxLength) {
-      return value;
+    // Inquirer renders each choice on one line. A raw newline in a value
+    // corrupts the list, so the user could tick a box that does not line up
+    // with the variable they think they are selecting.
+    const single = toSingleLine(value);
+
+    if (single.length <= maxLength) {
+      return single;
     }
 
-    return value.substring(0, maxLength - 3) + '...';
+    return single.substring(0, maxLength - 3) + '...';
   }
 
   /**

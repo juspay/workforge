@@ -269,7 +269,11 @@ export class CloseCommand {
       // Step 5: Remove worktree
       this.logger.newline();
       this.logger.step(3, 5, 'Removing worktree...');
-      const removeResult = await this.worktreeRemover.remove(worktree, this.options.force);
+      const removeResult = await this.worktreeRemover.remove(
+        worktree,
+        this.options.force,
+        mainRepo
+      );
 
       if (!removeResult.success) {
         this.logger.error(removeResult.message);

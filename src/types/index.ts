@@ -103,6 +103,7 @@ export type WorktreeInfo = {
   branchName: string;        // Associated branch name
   isMainRepo: boolean;       // True if this is the main repository
   commitHash: string;        // Current HEAD commit SHA
+  commitTimestamp?: number;  // HEAD commit time, Unix seconds (for age sorting)
   remoteUrl?: string;        // Git remote origin URL
   isLocked: boolean;         // Whether worktree is locked
   isPrunable: boolean;       // Whether worktree can be pruned

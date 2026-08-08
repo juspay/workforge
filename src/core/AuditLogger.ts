@@ -1,4 +1,13 @@
-import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, unlinkSync } from 'fs';
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  appendFileSync,
+  mkdirSync,
+  unlinkSync,
+  renameSync,
+  rmdirSync
+} from 'fs';
 import * as path from 'path';
 import { ProjectIdentifier } from './ProjectIdentifier.js';
 import { ConfigManager } from './ConfigManager.js';
@@ -159,27 +168,149 @@ export class AuditLogger {
   private addToHistory(operation: AuditOperation, projectDir: string): void {
     const historyPath = path.join(projectDir, 'sync-history.json');
 
-    // Read existing history
-    let history: AuditOperation[] = [];
+    // The read-modify-write below is not atomic on its own: two concurrent
+    // `close`/`sync-env` runs against the same project share this file and
+    // would drop one another's entries.
+    const lock = this.acquireLock(projectDir);
 
-    if (existsSync(historyPath)) {
-      try {
-        const content = readFileSync(historyPath, 'utf8');
-        history = JSON.parse(content);
-      } catch (error) {
-        console.warn(`Warning: Failed to parse sync history, creating new file: ${error}`);
+    try {
+      // Read existing history
+      let history: AuditOperation[] = [];
+
+      if (existsSync(historyPath)) {
+        try {
+          const content = readFileSync(historyPath, 'utf8');
+          history = JSON.parse(content);
+        } catch (error) {
+          // Never discard an unreadable history silently — it may be the only
+          // record of months of operations. Set it aside before starting over.
+          const salvaged = this.preserveCorruptFile(historyPath);
+          console.warn(
+            `Warning: Failed to parse sync history, starting a new file: ${error}` +
+              (salvaged ? `\n  Previous contents kept at: ${salvaged}` : '')
+          );
+          history = [];
+        }
+      }
+
+      if (!Array.isArray(history)) {
+        const salvaged = this.preserveCorruptFile(historyPath);
+        console.warn(
+          'Warning: Sync history was not an array, starting a new file' +
+            (salvaged ? `\n  Previous contents kept at: ${salvaged}` : '')
+        );
         history = [];
       }
+
+      // Add new operation
+      history.push(operation);
+
+      // Write updated history
+      try {
+        this.writeAtomically(historyPath, JSON.stringify(history, null, 2));
+      } catch (error) {
+        console.warn(`Warning: Failed to write sync history: ${error}`);
+      }
+    } finally {
+      this.releaseLock(lock);
+    }
+  }
+
+  /**
+   * Move an unparseable file aside instead of overwriting it
+   *
+   * @param filePath - File that could not be read
+   * @returns Path it was preserved at, or null
+   */
+  private preserveCorruptFile(filePath: string): string | null {
+    const target = `${filePath}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+
+    try {
+      renameSync(filePath, target);
+      return target;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Write via a temporary file and rename, so a reader never observes a
+   * half-written file and an interrupted write cannot truncate the original.
+   *
+   * @param filePath - Destination path
+   * @param content - Content to write
+   */
+  private writeAtomically(filePath: string, content: string): void {
+    const temp = `${filePath}.tmp-${process.pid}`;
+
+    writeFileSync(temp, content, 'utf8');
+
+    try {
+      renameSync(temp, filePath);
+    } catch (error) {
+      try {
+        unlinkSync(temp);
+      } catch {
+        // Nothing more to do.
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Take a cross-process lock for a project directory.
+   *
+   * `mkdir` is atomic on every platform we target, so the directory doubles as
+   * the lock. A stale lock left by a killed process is reclaimed after a
+   * timeout rather than deadlocking the CLI.
+   *
+   * @param projectDir - Directory to lock
+   * @returns Lock path if acquired, or null if it had to proceed without one
+   */
+  private acquireLock(projectDir: string): string | null {
+    const lockPath = path.join(projectDir, '.history.lock');
+    const staleAfterMs = 10_000;
+    const deadline = Date.now() + staleAfterMs;
+
+    for (;;) {
+      try {
+        mkdirSync(lockPath);
+        return lockPath;
+      } catch {
+        if (Date.now() >= deadline) {
+          // Assume the holder died; reclaim rather than block forever.
+          try {
+            rmdirSync(lockPath);
+            continue;
+          } catch {
+            return null;
+          }
+        }
+
+        // Busy-wait briefly. The critical section is a few milliseconds of
+        // file I/O, so this resolves quickly in practice.
+        const until = Date.now() + 20;
+        while (Date.now() < until) {
+          /* spin */
+        }
+      }
+    }
+  }
+
+  /**
+   * Release a lock taken by acquireLock
+   *
+   * @param lockPath - Lock path, or null when none was held
+   */
+  private releaseLock(lockPath: string | null): void {
+    if (!lockPath) {
+      return;
     }
 
-    // Add new operation
-    history.push(operation);
-
-    // Write updated history
     try {
-      writeFileSync(historyPath, JSON.stringify(history, null, 2), 'utf8');
-    } catch (error) {
-      console.warn(`Warning: Failed to write sync history: ${error}`);
+      rmdirSync(lockPath);
+    } catch {
+      // Already gone.
     }
   }
 
@@ -226,17 +357,12 @@ export class AuditLogger {
   private rebuildHumanLog(history: AuditOperation[], projectDir: string): void {
     const logPath = path.join(projectDir, 'audit.log');
 
+    // Build the replacement first and swap it in. Deleting the log and then
+    // appending entry by entry left a window where an interrupt would truncate
+    // the audit trail permanently.
     try {
-      // Clear existing log
-      if (existsSync(logPath)) {
-        unlinkSync(logPath);
-      }
-
-      // Rebuild from history
-      for (const operation of history) {
-        const logEntry = this.formatLogEntry(operation);
-        appendFileSync(logPath, logEntry + '\n', 'utf8');
-      }
+      const content = history.map(operation => this.formatLogEntry(operation) + '\n').join('');
+      this.writeAtomically(logPath, content);
     } catch (error) {
       console.warn(`Warning: Failed to rebuild audit log: ${error}`);
     }
