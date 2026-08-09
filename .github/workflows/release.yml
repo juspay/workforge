@@ -52,16 +52,19 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
-      # Trusted publishing needs npm >= 11.5.1; the runner ships an older one.
-      # No NPM_TOKEN is used anywhere — auth comes from the OIDC id-token above,
-      # which requires a trusted publisher configured for this package on
-      # npmjs.com pointing at this repository and this workflow file.
-      - name: Upgrade npm for OIDC support
-        run: npm install -g npm@latest
+      # Trusted publishing needs npm >= 11.5.1 and the runner ships an older
+      # one. npm is pinned to 11 rather than @latest, mirroring neurolink: npm
+      # 12 requires Node >= 22.22 and a future major will move that floor
+      # again, so @latest silently couples this step to the Node version above
+      # and breaks the release when npm ships a major.
+      - name: Upgrade npm for native OIDC publish support
+        run: |
+          npx -y npm@11 install -g npm@11
+          echo "npm version: $(npm --version)"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -106,7 +109,7 @@ jobs:
         if: steps.released.outputs.published == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://npm.pkg.github.com
           scope: "@juspay"
 
