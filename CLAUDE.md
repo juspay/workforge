@@ -38,6 +38,40 @@ pnpm run dev -- list --json
 
 ---
 
+## Releasing
+
+Releases are cut automatically by **semantic-release** — never bump the version
+or publish by hand. This mirrors `juspay/neurolink`.
+
+**Flow:** push to `release` → `.github/workflows/release.yml` → `npx
+semantic-release` → version derived from the commit messages → published to npm
+with provenance → `CHANGELOG.md` and `package.json` committed back with
+`[skip ci]` → mirrored to GitHub Packages.
+
+**Auth is token-less.** Publishing uses npm Trusted Publishing (OIDC): the
+workflow declares `id-token: write` and upgrades npm (`npm install -g npm@latest`,
+since OIDC needs npm >= 11.5.1). There is no `NPM_TOKEN`. This requires a
+trusted publisher configured for `@juspay/workforge` on npmjs.com, pointing at
+this repository and at `release.yml` by name — rename that file and publishing
+breaks.
+
+**Commit types decide the version** (`.releaserc.json`):
+
+| Type | Effect |
+|------|--------|
+| `feat` | minor |
+| `fix`, `perf`, `revert`, `refactor`, `build` | patch |
+| `docs`, `style`, `test`, `ci`, `chore` | no release |
+| `BREAKING CHANGE:` in the body, or `type!` | major |
+
+A ticket prefix is tolerated — `BZ-123: fix: ...` parses the same as `fix: ...`.
+
+Preview what a push would release, without publishing anything:
+
+```bash
+pnpm run release:dry-run
+```
+
 ## Architecture
 
 ### v3.0 - Modular Design
