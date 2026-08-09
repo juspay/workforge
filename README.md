@@ -37,7 +37,7 @@ A powerful CLI tool for managing Git worktrees with intelligent environment vari
 
 ```bash
 # Install globally via pnpm
-pnpm install -g workforge
+pnpm install -g @juspay/workforge
 
 # Use anywhere
 workforge --type feat --name user-auth
@@ -49,7 +49,7 @@ wf --type fix --name memory-leak
 
 ```bash
 # Install in your project
-pnpm install --save-dev workforge
+pnpm install --save-dev @juspay/workforge
 
 # Add to package.json scripts
 {
@@ -318,7 +318,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install WorkForge
-        run: pnpm install -g workforge
+        run: pnpm install -g @juspay/workforge
 
       - name: Configure WorkForge
         run: |
@@ -652,7 +652,7 @@ jobs:
           if [ -n "${{ github.event.inputs.ticket_id }}" ]; then
             TICKET_FLAG="--ticket ${{ github.event.inputs.ticket_id }}"
           fi
-          npx workforge -t feat -n ${{ github.event.inputs.feature_name }} $TICKET_FLAG -y
+          npx @juspay/workforge create -t feat -n ${{ github.event.inputs.feature_name }} $TICKET_FLAG -y
 ```
 
 ### Team Workflows

@@ -1,5 +1,5 @@
 {
-  "name": "workforge",
+  "name": "@juspay/workforge",
   "version": "1.5.0",
   "type": "module",
   "description": "Smart Git workspace manager with automatic environment setup, Jira integration, and intelligent package management",
@@ -33,6 +33,9 @@
   "homepage": "https://github.com/juspay/workforge#readme",
   "bugs": {
     "url": "https://github.com/juspay/workforge/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@types/inquirer": "^9.0.9",
