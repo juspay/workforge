@@ -1,6 +1,6 @@
 {
   "name": "@juspay/workforge",
-  "version": "1.5.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "Smart Git workspace manager with automatic environment setup, Jira integration, and intelligent package management",
   "main": "dist/index.js",
@@ -15,7 +15,8 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "prepublishOnly": "pnpm run lint && pnpm run build && vitest run",
     "test": "pnpm run build && vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release:dry-run": "semantic-release --dry-run --no-ci"
   },
   "keywords": [
     "git",
@@ -38,12 +39,20 @@
     "access": "public"
   },
   "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^11.0.6",
+    "@semantic-release/npm": "^13.1.2",
+    "@semantic-release/release-notes-generator": "^14.1.0",
     "@types/inquirer": "^9.0.9",
     "@types/node": "^20.0.0",
     "@types/yargs": "^17.0.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "conventional-changelog-conventionalcommits": "^9.1.0",
     "eslint": "^8.56.0",
+    "semantic-release": "^24.2.8",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.10"

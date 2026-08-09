@@ -1,0 +1,117 @@
+name: Release and Publish
+
+on:
+  push:
+    branches: [release]
+
+permissions:
+  contents: write
+  packages: write
+  issues: write
+  pull-requests: write
+  id-token: write # Required for npm provenance via OIDC
+
+# Two releases racing on the same branch would fight over tags and the
+# changelog commit.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: semantic-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      issues: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # semantic-release reads the full tag history to work out the next
+          # version.
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The test suite drives real `git` against temporary repositories, and
+      # runners have no identity configured.
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+          git config --global init.defaultBranch main
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Matches the packageManager field in package.json.
+          version: 8.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      # Trusted publishing needs npm >= 11.5.1; the runner ships an older one.
+      # No NPM_TOKEN is used anywhere — auth comes from the OIDC id-token above,
+      # which requires a trusted publisher configured for this package on
+      # npmjs.com pointing at this repository and this workflow file.
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm exec vitest run
+
+      - name: Read version before release
+        id: before
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HUSKY: "0" # Git hooks must not run on the automated changelog commit
+
+      # semantic-release is a no-op when a push contains only non-releasing
+      # commit types (chore, docs, ci, test). Comparing the version tells us
+      # whether anything was actually published, so the mirror below does not
+      # try to republish an existing version and fail with a 409.
+      - name: Detect whether a release happened
+        id: released
+        run: |
+          AFTER=$(node -p "require('./package.json').version")
+          if [ "$AFTER" != "${{ steps.before.outputs.version }}" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "version=$AFTER" >> "$GITHUB_OUTPUT"
+            echo "Released $AFTER"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "No release for this push"
+          fi
+
+      - name: Setup Node for GitHub Packages
+        if: steps.released.outputs.published == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+          scope: "@juspay"
+
+      - name: Mirror to GitHub Packages
+        if: steps.released.outputs.published == 'true'
+        run: pnpm publish --access public --no-git-checks --registry https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
