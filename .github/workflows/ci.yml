@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [release]
+  push:
+    branches: [release]
+
+# A newer push to the same branch makes an in-flight run redundant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: lint · build · test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The suite drives real `git` against temporary repositories, and
+      # `create` reads the committer identity, so a global identity is
+      # required — runners have none configured.
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+          git config --global init.defaultBranch main
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Matches the packageManager field in package.json.
+          version: 8.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Build
+        run: pnpm run build
+
+      # `pnpm test` builds first; the build above already ran, so call vitest
+      # directly to keep the step boundaries meaningful in the log.
+      - name: Test
+        run: pnpm exec vitest run
+
+      # Catches a broken `files` list or a missing build artifact before it
+      # reaches the registry. `pnpm pack` has no --dry-run in pnpm 8, so this
+      # uses npm, which is present on the runner regardless.
+      - name: Verify the package can be packed
+        run: npm pack --dry-run
