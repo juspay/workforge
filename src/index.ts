@@ -17,6 +17,7 @@ import {
   SyncEnvOptions,
   ListOptions,
   CleanupOptions,
+  ConfigValue,
   PackageJson
 } from './types/index.js';
 
@@ -26,8 +27,24 @@ const __dirname = dirname(__filename);
 const packageJson: PackageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
 const VERSION = packageJson.version;
 
+function readString(value: ConfigValue | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readProperty(value: ConfigValue | undefined, key: string): ConfigValue | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value[key]
+    : undefined;
+}
+
+// Derived from package.json rather than written out again: a duplicated URL
+// silently rotted into a `yourusername` placeholder and shipped in --help.
+const HOMEPAGE = readString(packageJson.homepage) ?? 'https://github.com/juspay/workforge';
+const ISSUES_URL =
+  readString(readProperty(packageJson.bugs, 'url')) ?? 'https://github.com/juspay/workforge/issues';
+
 /**
- * WorkForge v3.0 - Advanced Git Worktree Manager
+ * WorkForge - Advanced Git Worktree Manager
  *
  * Commands:
  * - create: Create a new worktree
@@ -312,7 +329,7 @@ async function main(): Promise<void> {
     .strict()
     .recommendCommands()
     .epilogue(`
-WorkForge v3.0 - Advanced Git Worktree Manager
+WorkForge v${VERSION} - Advanced Git Worktree Manager
 ------------------------------------------------
 Features:
   • Intelligent environment variable synchronization
@@ -322,8 +339,8 @@ Features:
   • Complete audit trail
   • Safety checks before worktree closure
 
-Documentation: https://github.com/yourusername/workforge
-Issues: https://github.com/yourusername/workforge/issues
+Documentation: ${HOMEPAGE}
+Issues: ${ISSUES_URL}
     `)
     .parseAsync();
 }
