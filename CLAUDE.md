@@ -4,9 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-WorkForge v3.0 is a TypeScript CLI tool for managing Git worktrees with intelligent environment variable synchronization, automatic backup management, and comprehensive audit logging. The tool provides five commands: `create`, `close`, `sync-env`, `list`, and `cleanup`.
+WorkForge is a TypeScript CLI tool for managing Git worktrees with intelligent environment variable synchronization, automatic backup management, and comprehensive audit logging. The tool provides five commands: `create`, `close`, `sync-env`, `list`, and `cleanup`.
 
 **Binary aliases**: `workforge` and `wf`
+
+**Versioning**: published as [`@juspay/workforge`](https://www.npmjs.com/package/@juspay/workforge),
+which started its public life at **1.0.0**. "v3.0" appears in older prose here
+and refers to the third internal rewrite — the modular architecture described
+below — not to a released version. Never write a version number into source or
+docs; read it from `package.json`, which is the only thing semantic-release
+updates.
 
 ## Development Commands
 
@@ -74,9 +81,9 @@ pnpm run release:dry-run
 
 ## Architecture
 
-### v3.0 - Modular Design
+### Modular Design
 
-WorkForge v3.0 uses a **modular architecture** with separation of concerns across commands, core components, UI components, and types.
+WorkForge uses a **modular architecture** with separation of concerns across commands, core components, UI components, and types.
 
 ### Directory Structure
 
@@ -116,17 +123,19 @@ src/
 
 test/
 ├── helpers/
-│   └── fixtures.ts    # Isolated bare remote + clone, CLI runner
-├── env-parser.test.ts # Parser fidelity and sync safety (unit)
-├── create.test.ts     # create command (drives the built CLI)
-└── close.test.ts      # close, BranchCleaner, BackupManager, ProjectIdentifier
+│   └── fixtures.ts        # Isolated bare remote + clone, CLI runner
+├── env-parser.test.ts     # Parser fidelity and sync safety (unit)
+├── create.test.ts         # create command (drives the built CLI)
+├── close.test.ts          # close, BranchCleaner, BackupManager, ProjectIdentifier
+├── worktree-audit.test.ts # WorktreeResolver/Remover, audit log durability
+└── cli-help.test.ts       # --help/--version strings, asserted against package.json
 ```
 
 ---
 
 ## Testing
 
-`pnpm test` builds, then runs Vitest. 41 tests, ~16s.
+`pnpm test` builds, then runs Vitest. 57 tests, ~23s.
 
 **How the fixtures work.** `makeRepo()` builds a bare repository standing in for
 the remote, a `seed` checkout used to push "someone else's" commits, and the
