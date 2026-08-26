@@ -18,6 +18,7 @@ export type WorkspaceConfig = {
   base?: string;             // Base branch; undefined means "auto-detect"
   yes: boolean;              // Skip confirmations
   ticketId?: string;         // Optional Jira ticket ID
+  switchTo?: boolean;        // Open a subshell in the new worktree when done
 };
 
 /**
