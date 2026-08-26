@@ -102,12 +102,22 @@ async function main(): Promise<void> {
             description: 'Skip confirmations',
             default: false
           })
+          .option('switch', {
+            alias: 's',
+            type: 'boolean',
+            description:
+              'Open a shell inside the new worktree when it is ready. This is a SUBSHELL — ' +
+              'exit returns you to where you started. A process cannot change its parent ' +
+              "shell's directory, so nothing can truly cd you there.",
+            default: false
+          })
           .example('$0 create -t feat -n auth', 'Create feat/auth from the detected primary branch')
           .example('$0 create -t fix -n bug -b develop', 'Create from origin/develop')
           .example('$0 create -t feat -n api -b beta --yes', 'Create from beta branch')
           .example('$0 create -t feat -n api -j BZ-123', 'Create with Jira ticket')
           .example('$0 create -t feat -n auth -j BZ-456', 'Create feat/BZ-456-auth worktree')
-          .example('$0 create -t fix -n "Bug Fix Name" --yes', 'Name auto-converted to kebab-case');
+          .example('$0 create -t fix -n "Bug Fix Name" --yes', 'Name auto-converted to kebab-case')
+          .example('$0 create -t feat -n api --switch', 'Create, then drop into a shell there');
       },
       async (argv) => {
         const config: WorkspaceConfig = {
@@ -115,7 +125,8 @@ async function main(): Promise<void> {
           name: argv.name as string,
           base: argv.base as string | undefined,
           yes: argv.yes as boolean,
-          ticketId: argv.ticket as string | undefined
+          ticketId: argv.ticket as string | undefined,
+          switchTo: argv.switch as boolean
         };
 
         const command = new CreateCommand(config);

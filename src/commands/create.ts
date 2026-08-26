@@ -65,6 +65,11 @@ export class CreateCommand {
       await this.runIndependently('Update project metadata', () => this.updateProjectMetadata());
 
       this.logSuccess();
+
+      if (this.config.switchTo) {
+        this.switchToWorkspace();
+      }
+
       process.exit(0);
     } catch (error) {
       this.handleError(toError(error));
@@ -689,6 +694,74 @@ export class CreateCommand {
     } catch (error) {
       this.log('warn', `⚠️  Failed to install dependencies with ${manager}: ${error}`);
       this.log('info', `You can manually run "${command} ${args.join(' ')}" in the workspace directory`);
+      return;
+    }
+
+    await this.runRepoSetupScript(manager, command, packageJsonPath);
+  }
+
+  /**
+   * Runs the repo's own `setup` script when package.json declares one.
+   *
+   * Installing dependencies is not always enough to make a fresh worktree
+   * runnable. Some repos require a one-time bootstrap afterwards, and a worktree
+   * that skipped it fails in ways that do not name the missing step: in
+   * juspay/lighthouse the Playwright mock suite aborts with
+   * `Cannot find package '$models'`, which reads as a broken module alias rather
+   * than an incomplete setup. Reproduced on a fresh worktree — 2 errors and 0
+   * tests before running it, 0 errors and the suite running after — with the
+   * synced .env byte-identical either way, so the env sync is not what closes
+   * the gap.
+   *
+   * Deliberately conventional rather than configurable: `setup` is the name the
+   * ecosystem already uses, and a repo without that script is unaffected.
+   * Failures warn and continue, exactly like the install step above — a
+   * bootstrap that does not apply to this checkout should not fail workspace
+   * creation. Skippable with WORKFORGE_SKIP_SETUP=1 for a repo whose `setup`
+   * is interactive or does something you do not want on every worktree.
+   */
+  private async runRepoSetupScript(
+    manager: string,
+    command: string,
+    packageJsonPath: string
+  ): Promise<void> {
+    if (!this.paths) {
+      return;
+    }
+
+    if (process.env.WORKFORGE_SKIP_SETUP === '1') {
+      this.log('info', 'WORKFORGE_SKIP_SETUP=1 — skipping the repo setup script');
+      return;
+    }
+
+    let hasSetupScript = false;
+    try {
+      const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+        scripts?: Record<string, string>;
+      };
+      hasSetupScript = typeof manifest.scripts?.setup === 'string';
+    } catch {
+      // an unreadable/!JSON manifest is the install step's problem, not ours
+      return;
+    }
+
+    if (!hasSetupScript) {
+      return;
+    }
+
+    this.log('info', `Running the repo's setup script (${manager} run setup)...`);
+    try {
+      execFileSync(command, ['run', 'setup'], {
+        cwd: this.paths.workspacePath,
+        stdio: 'inherit'
+      });
+      this.log('success', '✅ Repo setup script completed');
+    } catch (error) {
+      this.log('warn', `⚠️  Repo setup script failed: ${error}`);
+      this.log(
+        'info',
+        `The workspace is still usable — run "${command} run setup" yourself if something is missing.`
+      );
     }
   }
 
@@ -701,6 +774,70 @@ export class CreateCommand {
       ProjectIdentifier.updateMetadata(this.paths.repoRoot);
     } catch (error) {
       // Silently ignore metadata update errors
+    }
+  }
+
+  /**
+   * Opens an interactive shell inside the new worktree.
+   *
+   * This is a SUBSHELL, and the distinction matters enough to say twice: a
+   * process cannot change its parent shell's working directory, so no CLI flag
+   * can genuinely `cd` you anywhere. What this does is spawn $SHELL with its cwd
+   * set to the new worktree and hand over the terminal; `exit` unwinds back to
+   * wherever you invoked workforge from. Someone expecting a real cd will read
+   * that unwind as the feature failing, so the banner below says so plainly.
+   *
+   * The alternative — printing a path for a shell function to consume, e.g.
+   *   wf() { cd "$(workforge create "$@" --print-path)"; }
+   * — is the only way to move the parent shell, and it requires the user to
+   * install that function. This flag is for the common case where a subshell is
+   * good enough.
+   *
+   * Skipped without a TTY: in CI or a piped invocation an interactive shell has
+   * nothing to read from and would hang the run rather than fail it.
+   */
+  private switchToWorkspace(): void {
+    if (!this.paths) {
+      return;
+    }
+
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      this.log('info', '--switch ignored: not an interactive terminal.');
+      this.log('info', `  cd ${this.paths.workspacePath}`);
+      return;
+    }
+
+    const shell =
+      process.platform === 'win32'
+        ? process.env.ComSpec || 'cmd.exe'
+        : process.env.SHELL || '/bin/sh';
+
+    console.log(
+      chalk.cyan(
+        `\n↪ Opening a subshell in ${this.paths.workspacePath}\n` +
+          `  Type 'exit' to return to ${process.cwd()}\n`
+      )
+    );
+
+    try {
+      const result = spawnSync(shell, [], {
+        cwd: this.paths.workspacePath,
+        stdio: 'inherit',
+        env: {
+          ...process.env,
+          // Lets a prompt or rc file notice it is inside a workforge subshell —
+          // useful for showing the worktree name without guessing from the path.
+          WORKFORGE_WORKSPACE: this.paths.workspacePath,
+          WORKFORGE_BRANCH: this.paths.branchName
+        }
+      });
+
+      if (result.error) {
+        throw result.error;
+      }
+    } catch (error) {
+      this.log('warn', `⚠️  Could not open a shell in the workspace: ${toError(error).message}`);
+      this.log('info', `  cd ${this.paths.workspacePath}`);
     }
   }
 
@@ -722,7 +859,9 @@ export class CreateCommand {
 
 Next steps:
   cd ${this.paths.workspacePath}
-  # Start working on your feature/fix!
+  # Start working on your feature/fix!${
+    this.config.switchTo ? '' : '\n  # (or pass --switch next time to land there directly)'
+  }
 `);
 
     if (this.warnings.length > 0) {
