@@ -36,6 +36,14 @@ describe('close: branch deletion safety', () => {
 
     expect(gitIn(repo.local, ['rev-parse', 'feat/keepme'])).toBe(sha);
     expect(run.output).toMatch(/not fully merged|--force|not merged/i);
+
+    // The branch was NOT deleted (refused for safety) — the summary and exit
+    // code must say so, not claim success. This is the BZ report from
+    // 25 Sep 2026: the worktree closed, deletion was refused, and the
+    // summary still printed "Branch deleted: <name>" with exit code 0.
+    expect(run.output).not.toMatch(/Branch deleted/i);
+    expect(run.output).toMatch(/Branch kept/i);
+    expect(run.status).not.toBe(0);
   });
 
   it('deletes the branch when --force is given', () => {
