@@ -287,9 +287,18 @@ export class CloseCommand {
       const shouldDeleteBranch =
         this.options.deleteBranch || (config.preferences.autoDeleteBranch && !worktree.isMainRepo);
 
+      // Tracks what actually happened, not what was merely requested — the
+      // summary and exit code must report the real outcome. Attempting and
+      // failing (e.g. an unmerged branch refused without --force) is a
+      // distinct, reportable state from "never attempted".
+      let branchCleanupAttempted = false;
+      let branchDeleted = false;
+      let branchKeptReason: string | undefined;
+
       if (shouldDeleteBranch && worktree.branchName && worktree.branchName !== 'HEAD') {
         this.logger.newline();
         this.logger.step(4, 5, 'Deleting branch...');
+        branchCleanupAttempted = true;
 
         const cleanupResult = await this.branchCleaner.cleanup(
           worktree.branchName,
@@ -299,6 +308,7 @@ export class CloseCommand {
         );
 
         if (cleanupResult.success) {
+          branchDeleted = true;
           this.logger.success(cleanupResult.message);
 
           // Show warnings
@@ -308,8 +318,18 @@ export class CloseCommand {
             }
           }
         } else {
+          branchKeptReason = cleanupResult.message;
           this.logger.warning(cleanupResult.message);
         }
+      }
+
+      // Branch deletion was requested but refused or failed. The worktree
+      // itself closed fine, so this is not a fatal error — but it is not the
+      // full success the caller asked for either, so `close` must not exit 0
+      // as if the branch had been deleted (git itself exits non-zero on a
+      // refused `branch -d`, and we swallowed that here).
+      if (branchCleanupAttempted && !branchDeleted) {
+        process.exitCode = 1;
       }
 
       // Step 7: Summary
@@ -317,7 +337,14 @@ export class CloseCommand {
       this.logger.step(5, 5, 'Complete!');
       this.logger.newline();
 
-      this.displaySummary(worktree.branchName, syncPerformed, backupCreated, shouldDeleteBranch);
+      this.displaySummary(
+        worktree.branchName,
+        syncPerformed,
+        backupCreated,
+        branchDeleted,
+        branchCleanupAttempted,
+        branchKeptReason
+      );
 
     } catch (error) {
       this.logger.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -373,7 +400,9 @@ export class CloseCommand {
     branchName: string,
     syncPerformed: boolean,
     backupCreated: boolean,
-    branchDeleted: boolean
+    branchDeleted: boolean,
+    branchCleanupAttempted: boolean,
+    branchKeptReason: string | undefined
   ): void {
     this.logger.subheader('Summary:');
     this.logger.listItem(chalk.green(`Worktree closed: ${branchName}`));
@@ -388,9 +417,18 @@ export class CloseCommand {
 
     if (branchDeleted) {
       this.logger.listItem(chalk.green(`Branch deleted: ${branchName}`));
+    } else if (branchCleanupAttempted) {
+      this.logger.listItem(
+        chalk.yellow(`Branch kept: ${branchName}${branchKeptReason ? ` (${branchKeptReason})` : ''}`)
+      );
     }
 
     this.logger.newline();
-    this.logger.success('Worktree closed successfully!');
+
+    if (branchCleanupAttempted && !branchDeleted) {
+      this.logger.warning('Worktree closed, but the branch was kept — see above.');
+    } else {
+      this.logger.success('Worktree closed successfully!');
+    }
   }
 }
